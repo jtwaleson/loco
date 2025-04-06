@@ -16,6 +16,7 @@ use sqlx::{
 use tokio::{task::JoinHandle, time::sleep};
 use tracing::{debug, error, trace};
 use ulid::Ulid;
+use validator::Validate;
 
 use super::{BackgroundWorker, JobStatus, Queue};
 use crate::{config::PostgresQueueConfig, Error, Result};
@@ -551,6 +552,7 @@ pub struct RunOpts {
 ///
 /// This function will return an error if it fails
 pub async fn create_provider(qcfg: &PostgresQueueConfig) -> Result<Queue> {
+    qcfg.validate()?;
     let pool = connect(qcfg).await.map_err(Box::from)?;
     let registry = JobRegistry::new();
     Ok(Queue::Postgres(
