@@ -432,8 +432,8 @@ impl ComponentArg {
             Self::Data { name } => Ok(loco_gen::Component::Data { name }),
             Self::Deployment { kind } => Ok(kind.to_generator_component(config)),
             Self::Override {
-                template_path: _,
-                info: _,
+                template_path,
+                info,
             } => Err(crate::Error::string(
                 "Error: Override could not be generated.",
             )),

@@ -31,6 +31,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::info;
+use validator::Validate;
 
 use crate::{controller::middleware, environment::Environment, logger, scheduler, Error, Result};
 
@@ -272,6 +273,12 @@ pub struct PostgresQueueConfig {
 
     #[serde(default = "num_workers")]
     pub num_workers: u32,
+
+    #[serde(default)]
+    pub include_job_types: Option<Vec<String>>,
+
+    #[serde(default)]
+    pub exclude_job_types: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -329,6 +336,31 @@ fn sqlt_poll_interval() -> u32 {
 
 fn num_workers() -> u32 {
     2
+}
+
+impl Validate for PostgresQueueConfig {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        let mut errors = validator::ValidationErrors::new();
+
+        if self.include_job_types.is_some() && self.exclude_job_types.is_some() {
+            errors.add(
+                "include_job_types",
+                validator::ValidationError {
+                    code: "conflict".into(),
+                    message: Some(
+                        "cannot specify both include_job_types and exclude_job_types".into(),
+                    ),
+                    params: std::collections::HashMap::new(),
+                },
+            );
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
 }
 
 /// User authentication configuration.

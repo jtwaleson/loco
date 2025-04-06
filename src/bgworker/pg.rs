@@ -113,8 +113,8 @@ impl JobRegistry {
         let interval = opts.poll_interval_sec;
         for idx in 0..opts.num_workers {
             let handlers = self.handlers.clone();
-
             let pool = pool.clone();
+            let opts = opts.clone();
             let job = tokio::spawn(async move {
                 loop {
                     trace!(
@@ -122,7 +122,13 @@ impl JobRegistry {
                         worker_num = idx,
                         "pg workers stats"
                     );
-                    let job_opt = match dequeue(&pool).await {
+                    let job_opt = match dequeue(
+                        &pool,
+                        opts.include_job_types.clone(),
+                        opts.exclude_job_types.clone(),
+                    )
+                    .await
+                    {
                         Ok(t) => t,
                         Err(err) => {
                             error!(err = err.to_string(), "cannot fetch from queue");
@@ -251,17 +257,41 @@ pub async fn enqueue(
     Ok(id)
 }
 
-async fn dequeue(client: &PgPool) -> Result<Option<Job>> {
+async fn dequeue(
+    client: &PgPool,
+    include_job_types: Option<Vec<String>>,
+    exclude_job_types: Option<Vec<String>>,
+) -> Result<Option<Job>> {
+    if include_job_types.is_some() && exclude_job_types.is_some() {
+        return Err(Error::string(
+            "cannot specify both include_job_types and exclude_job_types",
+        ));
+    }
+
+    let mut query = String::from("SELECT id, name, task_data, status, run_at, interval FROM pg_loco_queue WHERE status = $1 AND run_at <= NOW()");
+
+    if let Some(_include) = &include_job_types {
+        query.push_str(" AND name = ANY($2)");
+    } else if let Some(_exclude) = &exclude_job_types {
+        query.push_str(" AND name != ALL($2)");
+    }
+
+    query.push_str(" ORDER BY run_at LIMIT 1 FOR UPDATE SKIP LOCKED");
+
     let mut tx = client.begin().await?;
-    let row = sqlx::query(
-        "SELECT id, name, task_data, status, run_at, interval FROM pg_loco_queue WHERE status = \
-         $1 AND run_at <= NOW() ORDER BY run_at LIMIT 1 FOR UPDATE SKIP LOCKED",
-    )
-    .bind(JobStatus::Queued.to_string())
-    .map(|row: PgRow| to_job(&row).ok())
-    .fetch_optional(&mut *tx)
-    .await?
-    .flatten();
+    let mut query_builder = sqlx::query(&query).bind(JobStatus::Queued.to_string());
+
+    if let Some(include) = include_job_types {
+        query_builder = query_builder.bind(include);
+    } else if let Some(exclude) = exclude_job_types {
+        query_builder = query_builder.bind(exclude);
+    }
+
+    let row = query_builder
+        .map(|row: PgRow| to_job(&row).ok())
+        .fetch_optional(&mut *tx)
+        .await?
+        .flatten();
 
     if let Some(job) = row {
         sqlx::query("UPDATE pg_loco_queue SET status = $1, updated_at = NOW() WHERE id = $2")
@@ -271,7 +301,6 @@ async fn dequeue(client: &PgPool) -> Result<Option<Job>> {
             .await?;
 
         tx.commit().await?;
-
         Ok(Some(job))
     } else {
         Ok(None)
@@ -508,10 +537,12 @@ fn to_job(row: &PgRow) -> Result<Job> {
     })
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RunOpts {
     pub num_workers: u32,
     pub poll_interval_sec: u32,
+    pub include_job_types: Option<Vec<String>>,
+    pub exclude_job_types: Option<Vec<String>>,
 }
 
 /// Create this provider
@@ -528,6 +559,8 @@ pub async fn create_provider(qcfg: &PostgresQueueConfig) -> Result<Queue> {
         RunOpts {
             num_workers: qcfg.num_workers,
             poll_interval_sec: qcfg.poll_interval_sec,
+            include_job_types: qcfg.include_job_types.clone(),
+            exclude_job_types: qcfg.exclude_job_types.clone(),
         },
     ))
 }
@@ -655,7 +688,7 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_secs(1));
 
-        assert!(dequeue(&pool).await.is_ok());
+        assert!(dequeue(&pool, None, None).await.is_ok());
 
         let job_after_dequeue = get_all_jobs(&pool)
             .await

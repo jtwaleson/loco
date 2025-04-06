@@ -630,6 +630,8 @@ pub async fn converge(queue: &Queue, config: &QueueConfig) -> Result<()> {
             poll_interval_sec: _,
             num_workers: _,
             min_connections: _,
+            include_job_types: _,
+            exclude_job_types: _,
         })
         | QueueConfig::Sqlite(SqliteQueueConfig {
             dangerously_flush,
