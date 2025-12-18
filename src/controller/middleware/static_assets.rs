@@ -102,6 +102,7 @@ pub struct RegexCacheRule {
 }
 
 /// Compiled regex cache rule for efficient matching
+#[derive(Clone)]
 struct CompiledRegexCacheRule {
     regex: Regex,
     cache_control: HeaderValue,
