@@ -811,7 +811,7 @@ The static assets middleware serves static files (e.g., images, CSS, JS) from a 
 ```yaml
 #...
 middlewares:
-  static_assets:
+  static:
     enable: true
     folder:
       uri: "/static"
@@ -822,12 +822,12 @@ middlewares:
 
 ### Cache Control
 
-You can configure cache control headers for static assets to optimize performance. By default, static assets are cached for 1 year (`max-age=31536000`).
+You can configure cache control headers for static assets to optimize performance. The `cache_control` option sets a default cache control header for all static assets. If no `cache_control` is specified, no cache headers are set by default.
 
 ```yaml
 #...
 middlewares:
-  static_assets:
+  static:
     enable: true
     cache_control: "max-age=31536000, public"  # 1 year cache
     # or
@@ -838,6 +838,29 @@ middlewares:
     cache_control: null  # Disable caching entirely
 ```
 
+### Path-Based Cache Control with Regex
+
+For more granular control, you can use `regex_cache` to apply different cache control headers based on the request path. The first regex pattern that matches the request path will have its cache control header applied. If no regex matches, the default `cache_control` value is used (if configured).
+
+This is useful when you want different caching strategies for different types of assets. For example, you might want strong caching for assets under `/assets/` but no caching for other static files.
+
+```yaml
+#...
+middlewares:
+  static:
+    enable: true
+    cache_control: "no-cache"  # Default for paths that don't match any regex
+    regex_cache:
+      - pattern: "^/static/assets/"
+        cache_control: "max-age=31536000, public"  # Strong caching for /assets/
+      - pattern: "^/static/images/.*\\.(jpg|png|gif)$"
+        cache_control: "max-age=86400"  # 1 day cache for images
+      - pattern: "^/static/css/.*\\.css$"
+        cache_control: "max-age=604800"  # 1 week cache for CSS
+```
+
+The regex patterns are matched against the full request path (e.g., `/static/assets/image.png`). Patterns are checked in order, and the first match wins.
+
 ### Precompressed Assets
 
 `Loco` leverages [ServeDir::precompressed_gzip](https://docs.rs/tower-http/latest/tower_http/services/struct.ServeDir.html#method.precompressed_gzip) to enable a `one click` solution of serving pre compressed assets.
@@ -847,7 +870,7 @@ If a static assets exists on the disk as a `.gz` file, `Loco` will serve it inst
 ```yaml
 #...
 middlewares:
-  static_assets:
+  static:
     enable: true
     precompressed: true
 ```
