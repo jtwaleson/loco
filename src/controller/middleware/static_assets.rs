@@ -5,14 +5,26 @@
 //! serve in case a requested file is not found. Additionally, it can serve
 //! precompressed files if enabled via the configuration.
 //!
+//! The middleware supports path-based cache control through regex patterns.
+//! You can configure `regex_cache` with a list of regex patterns and cache
+//! control headers. The first regex that matches the request path will have
+//! its cache_control header applied. If no regex matches, the default
+//! `cache_control` value is used (if configured).
+//!
 //! The middleware checks if the specified folder and fallback file exist, and
 //! if either is missing, it returns an error. If the files exist, the
 //! middleware is added to the router to serve static files.
 
 use std::path::PathBuf;
 
-use axum::http::header::{HeaderValue, CACHE_CONTROL};
-use axum::Router as AXRouter;
+use axum::{
+    extract::Request,
+    http::header::{HeaderValue, CACHE_CONTROL},
+    middleware::Next,
+    response::Response,
+    Router as AXRouter,
+};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tower_http::services::{ServeDir, ServeFile};
@@ -39,7 +51,12 @@ pub struct StaticAssets {
     #[serde(default = "default_precompressed")]
     pub precompressed: bool,
     /// Cache control header value for static assets (e.g., "max-age=31536000")
+    /// This is used as the default cache control when no regex matches.
     pub cache_control: Option<String>,
+    /// List of regex patterns with cache control headers.
+    /// The first regex that matches the request path will have its cache_control applied.
+    #[serde(default)]
+    pub regex_cache: Vec<RegexCacheRule>,
 }
 
 impl Default for StaticAssets {
@@ -73,6 +90,22 @@ pub struct FolderConfig {
     pub uri: String,
     /// Path for the assets
     pub path: PathBuf,
+}
+
+/// Regex cache rule for path-based cache control
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RegexCacheRule {
+    /// Regex pattern to match against the request path
+    pub pattern: String,
+    /// Cache control header value to apply when pattern matches
+    pub cache_control: String,
+}
+
+/// Compiled regex cache rule for efficient matching
+#[derive(Clone)]
+struct CompiledRegexCacheRule {
+    regex: Regex,
+    cache_control: HeaderValue,
 }
 
 // Implement the MiddlewareTrait for your Middleware struct
@@ -109,32 +142,75 @@ impl MiddlewareLayer for StaticAssets {
             )));
         }
 
+        // Compile regex patterns if regex_cache is configured
+        let compiled_rules: Result<Vec<CompiledRegexCacheRule>> = self
+            .regex_cache
+            .iter()
+            .map(|rule| {
+                let regex = Regex::new(&rule.pattern).map_err(|e| {
+                    Error::Message(format!(
+                        "invalid regex pattern '{}': {}",
+                        rule.pattern, e
+                    ))
+                })?;
+                let cache_control = HeaderValue::from_str(&rule.cache_control).map_err(|e| {
+                    Error::Message(format!(
+                        "invalid cache_control value '{}': {}",
+                        rule.cache_control, e
+                    ))
+                })?;
+                Ok(CompiledRegexCacheRule {
+                    regex,
+                    cache_control,
+                })
+            })
+            .collect();
+
+        let compiled_rules = compiled_rules?;
+        let default_cache_control = self
+            .cache_control
+            .as_ref()
+            .and_then(|cc| HeaderValue::from_str(cc).ok());
+
         let serve_dir = ServeDir::new(&self.folder.path).fallback(ServeFile::new(&self.fallback));
 
-        // Create static service with cache control if configured
-        let static_service = if let Some(cache_control) = &self.cache_control {
-            let cache_header_layer = SetResponseHeaderLayer::overriding(
-                CACHE_CONTROL,
-                HeaderValue::from_str(cache_control)
-                    .unwrap_or_else(|_| HeaderValue::from_static("max-age=31536000")),
-            );
+        let base_service = if self.precompressed {
+            serve_dir.precompressed_gzip()
+        } else {
+            serve_dir
+        };
 
-            let base_service = if self.precompressed {
-                serve_dir.precompressed_gzip()
-            } else {
-                serve_dir
-            };
+        // Create static service with cache control middleware if needed
+        let static_service = if !compiled_rules.is_empty() || default_cache_control.is_some() {
+            // Use middleware to check regex patterns and apply cache control
+            let rules = compiled_rules.clone();
+            let default_cc = default_cache_control.clone();
 
-            // Create a router with the cache control layer applied to the static service
             AXRouter::new()
                 .fallback_service(base_service)
-                .layer(cache_header_layer)
+                .layer(axum::middleware::from_fn(move |request: Request, next: Next| {
+                    let rules = rules.clone();
+                    let default_cc = default_cc.clone();
+                    async move {
+                        // Get the request path for regex matching
+                        let path = request.uri().path().to_string();
+                        let mut response = next.run(request).await;
+
+                        // Check regex patterns in order - first match wins
+                        let cache_control = rules
+                            .iter()
+                            .find(|rule| rule.regex.is_match(&path))
+                            .map(|rule| rule.cache_control.clone())
+                            .or(default_cc);
+
+                        if let Some(cc) = cache_control {
+                            response.headers_mut().insert(CACHE_CONTROL, cc);
+                        }
+
+                        response
+                    }
+                }))
         } else {
-            let base_service = if self.precompressed {
-                serve_dir.precompressed_gzip()
-            } else {
-                serve_dir
-            };
             AXRouter::new().fallback_service(base_service)
         };
 

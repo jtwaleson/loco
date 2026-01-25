@@ -280,6 +280,7 @@ async fn static_assets() {
         fallback: base_static_path.join("404.html"),
         precompressed: false,
         cache_control: None,
+        regex_cache: vec![],
     });
 
     let port = get_available_port().await;
