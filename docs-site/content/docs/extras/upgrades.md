@@ -83,6 +83,34 @@ redis-cli --scan --pattern "queue:*" | xargs redis-cli DEL
 
 SQLite and Postgres workers also gained priority support but with **no breaking changes**. The priority column is automatically added to existing databases on startup.
 
+## Upgrade from 0.16.x to X.X.X
+
+### Mailer Template Improvements
+
+The mailer template system has been upgraded to support full Tera template features, including inheritance (`{% extends %}`) and blocks. This enables better code reuse across email templates.
+
+#### Breaking Changes
+
+If you are manually instantiating `Template` using `Template::new`, note that the signature has changed to return a `Result`:
+
+```diff
+- let template = Template::new(&dir);
++ let template = Template::new(&dir)?;
+```
+
+Standard usage via `Mailer::mail_template` remains unchanged and fully backward compatible.
+
+#### New Features
+
+You can now use `Template::new_with_shared` to share templates between mailers, and use Tera's inheritance in your templates.
+
+```rust
+use loco_rs::mailer::template::Template;
+
+// Load shared templates
+let template = Template::new_with_shared(&dir, &[&shared_dir])?;
+```
+
 ## Upgrade from 0.15.x to 0.16.x
 
 ### Use `AppContext` instead of `Config` in `init_logger` in the `Hooks` trait
