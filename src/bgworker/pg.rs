@@ -252,6 +252,7 @@ pub async fn initialize_database(pool: &PgPool) -> Result<()> {
                     name VARCHAR NOT NULL,
                     task_data JSONB NOT NULL,
                     status VARCHAR NOT NULL DEFAULT '{}',
+                    attempts_left INT NOT NULL DEFAULT 3,
                     run_at TIMESTAMPTZ NOT NULL,
                     interval BIGINT,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -281,6 +282,26 @@ pub async fn initialize_database(pool: &PgPool) -> Result<()> {
             sqlx::query("ALTER TABLE pg_loco_queue ADD COLUMN priority INT NOT NULL DEFAULT 0")
                 .execute(pool)
                 .await?;
+        }
+
+        // Check if attempts_left column exists
+        let attempts_left_exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS (
+                SELECT FROM information_schema.columns
+                WHERE table_name = 'pg_loco_queue'
+                AND column_name = 'attempts_left'
+            )",
+        )
+        .fetch_one(pool)
+        .await?;
+
+        if !attempts_left_exists {
+            debug!("Adding attempts_left column to existing pg_loco_queue table");
+            sqlx::query(
+                "ALTER TABLE pg_loco_queue ADD COLUMN attempts_left INT NOT NULL DEFAULT 3",
+            )
+            .execute(pool)
+            .await?;
         }
     }
 
@@ -377,14 +398,34 @@ async fn dequeue(client: &PgPool, worker_tags: &[String]) -> Result<Option<Job>>
 
     if let Some(job) = row {
         debug!(job_id = %job.id, job_name = %job.name, job_tags = ?job.tags, job_priority = %job.priority, "Dequeueing job for processing");
-        sqlx::query("UPDATE pg_loco_queue SET status = $1, updated_at = NOW() WHERE id = $2")
+        let status_after_start: String = sqlx::query(
+            "UPDATE pg_loco_queue
+             SET
+                 status = CASE WHEN attempts_left <= 0 THEN $1 ELSE $2 END,
+                 attempts_left = CASE WHEN attempts_left <= 0 THEN 0 ELSE attempts_left - 1 END,
+                 updated_at = NOW()
+             WHERE id = $3
+             RETURNING status",
+        )
+            .bind(JobStatus::Failed.to_string())
             .bind(JobStatus::Processing.to_string())
             .bind(&job.id)
-            .execute(&mut *tx)
-            .await?;
+            .fetch_one(&mut *tx)
+            .await?
+            .get("status");
+
+        if status_after_start == JobStatus::Failed.to_string() {
+            debug!(
+                job_id = %job.id,
+                job_name = %job.name,
+                "Job marked as failed because attempts_left is exhausted"
+            );
+
+            tx.commit().await?;
+            return Ok(None);
+        }
 
         tx.commit().await?;
-
         Ok(Some(job))
     } else {
         Ok(None)
@@ -735,6 +776,14 @@ mod tests {
             .expect("job not found")
     }
 
+    async fn get_attempts_left(pool: &PgPool, id: &str) -> i32 {
+        sqlx::query_scalar("SELECT attempts_left FROM pg_loco_queue WHERE id = $1")
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .expect("attempts_left not found")
+    }
+
     // New setup function that uses our testcontainer
     async fn setup_pg_test() -> (
         PgPool,
@@ -852,6 +901,63 @@ mod tests {
         (pattern, replacement)),     }, {
                 assert_debug_snapshot!(job_after_dequeue);
             });
+    }
+
+    #[tokio::test]
+    async fn dequeue_decrements_attempts_left_on_start() {
+        let (pool, _container) = setup_pg_test().await;
+
+        let job_id = enqueue(
+            &pool,
+            "PasswordChangeNotification",
+            serde_json::json!({"user_id": 1}),
+            Utc::now(),
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("enqueue should succeed");
+
+        let dequeued = dequeue(&pool, &[]).await.expect("dequeue failed");
+        assert!(dequeued.is_some(), "expected a job to be dequeued");
+
+        let job = get_job(&pool, &job_id).await;
+        assert_eq!(job.status, JobStatus::Processing);
+        assert_eq!(get_attempts_left(&pool, &job_id).await, 2);
+    }
+
+    #[tokio::test]
+    async fn dequeue_marks_job_failed_when_attempts_are_exhausted() {
+        let (pool, _container) = setup_pg_test().await;
+
+        let job_id = enqueue(
+            &pool,
+            "PasswordChangeNotification",
+            serde_json::json!({"user_id": 1}),
+            Utc::now(),
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("enqueue should succeed");
+
+        sqlx::query("UPDATE pg_loco_queue SET attempts_left = 0 WHERE id = $1")
+            .bind(&job_id)
+            .execute(&pool)
+            .await
+            .expect("failed to force attempts_left to zero");
+
+        let dequeued = dequeue(&pool, &[]).await.expect("dequeue failed");
+        assert!(
+            dequeued.is_none(),
+            "job with exhausted attempts should not be dequeued"
+        );
+
+        let job = get_job(&pool, &job_id).await;
+        assert_eq!(job.status, JobStatus::Failed);
+        assert_eq!(get_attempts_left(&pool, &job_id).await, 0);
     }
 
     #[tokio::test]
