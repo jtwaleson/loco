@@ -7,15 +7,14 @@
 //! ```rust,ignore
 //! use myapp::app::App;
 //! use loco_rs::cli;
-//! use migration::Migrator;
 //!
 //! #[tokio::main]
 //! async fn main() {
-//!     cli::main::<App, Migrator>().await
+//!     cli::main::<App>().await
 //! }
 //! ```
 #[cfg(feature = "with-db")]
-use {crate::boot::run_db, crate::db, sea_orm_migration::MigratorTrait};
+use {crate::boot::run_db, crate::db};
 
 use clap::{ArgAction, ArgGroup, Parser, Subcommand, ValueHint};
 use colored::Colorize;
@@ -660,8 +659,7 @@ pub async fn playground<H: Hooks>() -> crate::Result<AppContext> {
 /// The `main` function is the entry point for the command-line interface (CLI)
 /// of the application. It parses command-line arguments, interprets the
 /// specified commands, and performs corresponding actions. This function is
-/// generic over `H` and `M`, where `H` represents the application hooks and `M`
-/// represents the migrator trait for handling database migrations.
+/// generic over `H`, where `H` represents the application hooks.
 ///
 /// # Errors
 ///
@@ -672,17 +670,16 @@ pub async fn playground<H: Hooks>() -> crate::Result<AppContext> {
 /// ```rust,ignore
 /// use myapp::app::App;
 /// use loco_rs::cli;
-/// use migration::Migrator;
 ///
 /// #[tokio::main]
 /// async fn main()  {
-///     cli::main::<App, Migrator>().await
+///     cli::main::<App>().await
 /// }
 /// ```
 #[cfg(feature = "with-db")]
 #[allow(clippy::too_many_lines)]
 #[allow(clippy::cognitive_complexity)]
-pub async fn main<H: Hooks, M: MigratorTrait>() -> crate::Result<()> {
+pub async fn main<H: Hooks>() -> crate::Result<()> {
     let cli: Cli = Cli::parse();
     let environment: Environment = cli.environment.unwrap_or_else(resolve_from_env).into();
 
@@ -716,8 +713,7 @@ pub async fn main<H: Hooks, M: MigratorTrait>() -> crate::Result<()> {
                 |tags| StartMode::WorkerOnly { tags },
             );
 
-            let boot_result =
-                create_app::<H, M>(start_mode, &environment, app_context.config).await?;
+            let boot_result = create_app::<H>(start_mode, &environment, app_context.config).await?;
             let serve_params = ServeParams {
                 port: port.map_or(boot_result.app_context.config.server.port, |p| p),
                 binding: binding
@@ -730,7 +726,7 @@ pub async fn main<H: Hooks, M: MigratorTrait>() -> crate::Result<()> {
             if matches!(command, DbCommands::Create) {
                 db::create(&app_context.config.database.uri).await?;
             } else {
-                run_db::<H, M>(&app_context, command.into()).await?;
+                run_db::<H>(&app_context, command.into()).await?;
             }
         }
         #[cfg(feature = "bg_pg")]

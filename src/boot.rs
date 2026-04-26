@@ -8,8 +8,6 @@ use std::{
 };
 
 use axum::Router;
-#[cfg(feature = "with-db")]
-use sea_orm_migration::MigratorTrait;
 use tokio::{select, signal, task::JoinHandle};
 use tracing::{debug, error, info, warn};
 
@@ -292,31 +290,31 @@ pub enum RunDbCommand {
 /// Return an error when the given command fails. mostly return
 /// [`sea_orm::DbErr`]
 #[allow(clippy::cognitive_complexity)]
-pub async fn run_db<H: Hooks, M: MigratorTrait>(
+pub async fn run_db<H: Hooks>(
     app_context: &AppContext,
     cmd: RunDbCommand,
 ) -> Result<()> {
     match cmd {
         RunDbCommand::Migrate => {
             tracing::warn!("migrate:");
-            db::migrate::<M>(&app_context.db).await?;
+            db::migrate(&app_context.db).await?;
         }
         RunDbCommand::Down(steps) => {
             tracing::warn!("down:");
-            db::down::<M>(&app_context.db, steps).await?;
+            db::down(&app_context.db, steps).await?;
         }
         RunDbCommand::Reset => {
             tracing::warn!("reset:");
-            db::reset::<M>(&app_context.db).await?;
+            db::reset(&app_context.db).await?;
         }
         RunDbCommand::Status => {
             tracing::warn!("status:");
-            db::status::<M>(&app_context.db).await?;
+            db::status(&app_context.db).await?;
         }
         RunDbCommand::Entities => {
             tracing::warn!("entities:");
 
-            tracing::warn!("{}", db::entities::<M>(app_context).await?);
+            tracing::warn!("{}", db::entities(app_context).await?);
         }
         RunDbCommand::Truncate => {
             tracing::warn!("truncate:");
@@ -334,7 +332,7 @@ pub async fn run_db<H: Hooks, M: MigratorTrait>(
                 db::dump_tables(&app_context.db, from.as_path(), dump_tables).await?;
             } else {
                 if reset {
-                    db::reset::<M>(&app_context.db).await?;
+                    db::reset(&app_context.db).await?;
                 }
                 db::run_app_seed::<H>(app_context, &from).await?;
             }
@@ -392,13 +390,13 @@ pub async fn create_context<H: Hooks>(
 /// # Errors
 ///
 /// When could not create the application
-pub async fn create_app<H: Hooks, M: MigratorTrait>(
+pub async fn create_app<H: Hooks>(
     mode: StartMode,
     environment: &Environment,
     config: Config,
 ) -> Result<BootResult> {
     let app_context = create_context::<H>(environment, config).await?;
-    db::converge::<H, M>(&app_context, &app_context.config.database).await?;
+    db::converge::<H>(&app_context, &app_context.config.database).await?;
 
     if let (Some(queue), Some(config)) = (&app_context.queue_provider, &app_context.config.queue) {
         bgworker::converge(queue, config).await?;

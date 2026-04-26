@@ -2,7 +2,6 @@ use std::path::Path;
 
 use async_trait::async_trait;
 use sea_orm::Statement;
-pub use sea_orm_migration::prelude::*;
 
 use crate::{
     app::{AppContext, Hooks, Initializer},
@@ -118,16 +117,6 @@ pub mod test_db {
 }
 
 #[derive(Debug)]
-pub struct Migrator;
-
-#[async_trait::async_trait]
-impl MigratorTrait for Migrator {
-    fn migrations() -> Vec<Box<dyn MigrationTrait>> {
-        vec![]
-    }
-}
-
-#[derive(Debug)]
 pub struct AppHook;
 #[async_trait]
 impl Hooks for AppHook {
@@ -152,7 +141,7 @@ impl Hooks for AppHook {
         environment: &Environment,
         config: Config,
     ) -> Result<BootResult> {
-        create_app::<Self, Migrator>(mode, environment, config).await
+        create_app::<Self>(mode, environment, config).await
     }
 
     async fn connect_workers(_ctx: &AppContext, _q: &Queue) -> Result<()> {

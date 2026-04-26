@@ -291,19 +291,11 @@ pub trait Hooks: Send {
     /// Initializes and boots the application based on the specified mode and
     /// environment.
     ///
-    /// The boot initialization process may vary depending on whether a DB
-    /// migrator is used or not.
+    /// The boot initialization process may vary depending on your app setup.
     ///
     /// # Examples
     ///
     /// With DB:
-    /// ```rust,ignore
-    /// async fn boot(mode: StartMode, environment: &str, config: Config) -> Result<BootResult> {
-    ///     create_app::<Self, Migrator>(mode, environment, config).await
-    /// }
-    /// ````
-    ///
-    /// Without DB:
     /// ```rust,ignore
     /// async fn boot(mode: StartMode, environment: &str, config: Config) -> Result<BootResult> {
     ///     create_app::<Self>(mode, environment, config).await

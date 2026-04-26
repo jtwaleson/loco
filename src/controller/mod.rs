@@ -21,16 +21,8 @@
 //! use sea_orm::DatabaseConnection;
 //! use std::path::Path;
 //!
-//! /// this code block should be taken from the sea_orm migration model.
+//! /// App boot wiring.
 //! pub struct App;
-//! pub use sea_orm_migration::prelude::*;
-//! pub struct Migrator;
-//! #[async_trait::async_trait]
-//! impl MigratorTrait for Migrator {
-//!     fn migrations() -> Vec<Box<dyn MigrationTrait>> {
-//!         vec![]
-//!     }
-//! }
 //!
 //! #[async_trait]
 //! impl Hooks for App {
@@ -45,7 +37,7 @@
 //!     }
 //!
 //!     async fn boot(mode: StartMode, environment: &Environment, config: Config) -> Result<BootResult>{
-//!          create_app::<Self, Migrator>(mode, environment, config).await
+//!          create_app::<Self>(mode, environment, config).await
 //!     }
 //!
 //!     async fn connect_workers(_ctx: &AppContext, _queue: &Queue) -> Result<()> {

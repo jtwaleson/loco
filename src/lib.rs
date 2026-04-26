@@ -17,8 +17,6 @@ pub mod doctor;
 pub mod db;
 #[cfg(feature = "with-db")]
 pub mod model;
-#[cfg(feature = "with-db")]
-pub mod schema;
 mod tera;
 
 pub mod app;

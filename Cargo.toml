@@ -32,7 +32,6 @@ cli = ["dep:clap"]
 testing = ["dep:axum-test", "dep:scraper", "dep:tree-fs"]
 with-db = [
     "dep:sea-orm",
-    "dep:sea-orm-migration",
     "dep:sqlx",
     "loco-gen/with-db",
 ]
@@ -129,7 +128,6 @@ ulid = { version = "1", optional = true }
 scraper = { version = "0.21.0", features = ["deterministic"], optional = true }
 
 dashmap = "6"
-notify = "8.1.0"
 
 [workspace.dependencies]
 tera = { version = "1.19.1" }
@@ -155,18 +153,6 @@ tower-http = { version = "0.6.8", features = [
 ] }
 heck = "0.4.0"
 duct = { version = "1.0.0" }
-
-[dependencies.sea-orm-migration]
-optional = true
-version = "1.0.0"
-features = [
-    # Enable at least one `ASYNC_RUNTIME` and `DATABASE_DRIVER` feature if you want to run migration via CLI.
-    # View the list of supported features at https://www.sea-ql.org/SeaORM/docs/install-and-config/database-and-async-runtime.
-    # e.g.
-    "runtime-tokio-rustls", # `ASYNC_RUNTIME` feature
-    "sqlx-postgres",        # `DATABASE_DRIVER` feature
-    "sqlx-sqlite",
-]
 
 [package.metadata.docs.rs]
 features = ["testing"]

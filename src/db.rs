@@ -16,7 +16,6 @@ use sea_orm::{
     ActiveModelTrait, ConnectOptions, ConnectionTrait, Database, DatabaseBackend,
     DatabaseConnection, DbBackend, DbConn, DbErr, EntityTrait, IntoActiveModel, Statement,
 };
-use sea_orm_migration::MigratorTrait;
 use std::fmt::Write as FmtWrites;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -113,19 +112,20 @@ pub async fn verify_access(db: &DatabaseConnection) -> AppResult<()> {
 ///  an `AppResult`, which is an alias for `Result<(), AppError>`. It may
 /// return an `AppError` variant representing different database operation
 /// failures.
-pub async fn converge<H: Hooks, M: MigratorTrait>(
+pub async fn converge<H: Hooks>(
     ctx: &AppContext,
     config: &config::Database,
 ) -> AppResult<()> {
     if config.dangerously_recreate {
-        info!("recreating schema");
-        reset::<M>(&ctx.db).await?;
-        return Ok(());
+        return Err(Error::string(
+            "database recreate requires an app-level migration runner; this crate no longer ships one",
+        ));
     }
 
     if config.auto_migrate {
-        info!("auto migrating");
-        migrate::<M>(&ctx.db).await?;
+        return Err(Error::string(
+            "database auto_migrate requires an app-level migration runner; this crate no longer ships one",
+        ));
     }
 
     if config.dangerously_truncate {
@@ -228,8 +228,10 @@ pub async fn create(db_uri: &str) -> AppResult<()> {
 /// # Errors
 ///
 /// Returns a [`sea_orm::DbErr`] if an error occurs during run migration up.
-pub async fn migrate<M: MigratorTrait>(db: &DatabaseConnection) -> Result<(), sea_orm::DbErr> {
-    M::up(db, None).await
+pub async fn migrate(_db: &DatabaseConnection) -> AppResult<()> {
+    Err(Error::string(
+        "db migrate is no longer available in loco-rs core; run migrations from your app crate",
+    ))
 }
 
 /// Revert migrations to the database using the provided migrator.
@@ -237,11 +239,10 @@ pub async fn migrate<M: MigratorTrait>(db: &DatabaseConnection) -> Result<(), se
 /// # Errors
 ///
 /// Returns a [`sea_orm::DbErr`] if an error occurs during run migration up.
-pub async fn down<M: MigratorTrait>(
-    db: &DatabaseConnection,
-    steps: u32,
-) -> Result<(), sea_orm::DbErr> {
-    M::down(db, Some(steps)).await
+pub async fn down(_db: &DatabaseConnection, _steps: u32) -> AppResult<()> {
+    Err(Error::string(
+        "db down is no longer available in loco-rs core; run migrations from your app crate",
+    ))
 }
 
 /// Check the migration status of the database.
@@ -249,8 +250,10 @@ pub async fn down<M: MigratorTrait>(
 /// # Errors
 ///
 /// Returns a [`sea_orm::DbErr`] if an error occurs during checking status
-pub async fn status<M: MigratorTrait>(db: &DatabaseConnection) -> Result<(), sea_orm::DbErr> {
-    M::status(db).await
+pub async fn status(_db: &DatabaseConnection) -> AppResult<()> {
+    Err(Error::string(
+        "db status is no longer available in loco-rs core; run migrations from your app crate",
+    ))
 }
 
 /// Reset the database, dropping and recreating the schema and applying
@@ -259,9 +262,10 @@ pub async fn status<M: MigratorTrait>(db: &DatabaseConnection) -> Result<(), sea
 /// # Errors
 ///
 /// Returns a [`sea_orm::DbErr`] if an error occurs during reset databases.
-pub async fn reset<M: MigratorTrait>(db: &DatabaseConnection) -> Result<(), sea_orm::DbErr> {
-    M::fresh(db).await?;
-    migrate::<M>(db).await
+pub async fn reset(_db: &DatabaseConnection) -> AppResult<()> {
+    Err(Error::string(
+        "db reset is no longer available in loco-rs core; run migrations from your app crate",
+    ))
 }
 
 use sea_orm::EntityName;
@@ -550,7 +554,7 @@ impl EntityCmd {
 /// # Errors
 ///
 /// Returns a [`AppResult`] if an error occurs during generate model entity.
-pub async fn entities<M: MigratorTrait>(ctx: &AppContext) -> AppResult<String> {
+pub async fn entities(ctx: &AppContext) -> AppResult<String> {
     doctor::check_seaorm_cli()?.to_result()?;
     doctor::check_db(&ctx.config.database).await.to_result()?;
 

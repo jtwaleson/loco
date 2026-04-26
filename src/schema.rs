@@ -6,8 +6,9 @@ use sea_orm::{
     },
     ColumnType, ConnectionTrait, DbErr, ForeignKeyAction,
 };
-pub use sea_orm_migration::schema::*;
-use sea_orm_migration::{prelude::Iden, sea_query, SchemaManager};
+pub use sea_orm::schema::*;
+use sea_orm::{sea_query, SchemaManager};
+use sea_orm::sea_query::Iden;
 
 #[derive(Iden)]
 enum GeneralIds {
