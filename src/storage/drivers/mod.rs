@@ -4,12 +4,6 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use opendal::Reader;
 
-#[cfg(feature = "storage_aws_s3")]
-pub mod aws;
-#[cfg(feature = "storage_azure")]
-pub mod azure;
-#[cfg(feature = "storage_gcp")]
-pub mod gcp;
 pub mod local;
 pub mod mem;
 pub mod null;

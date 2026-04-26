@@ -300,15 +300,8 @@ mod tests {
             .times(1)
             .returning(|p| Ok(p.to_path_buf()));
 
-        executor
-            .expect_copy_file()
-            .with(eq(Path::new("README.md")))
-            .times(1)
-            .returning(|p| Ok(p.to_path_buf()));
-
         let g = Generator::new(Arc::new(executor), settings::Settings::default());
-        let script_res =
-            g.run_from_script(r#"gen.copy_files([".gitignore", ".rustfmt.toml", "README.md"]);"#);
+        let script_res = g.run_from_script(r#"gen.copy_files([".gitignore", ".rustfmt.toml"]);"#);
 
         assert!(script_res.is_ok());
     }

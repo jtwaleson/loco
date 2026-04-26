@@ -49,11 +49,6 @@ pub async fn create_cache_provider(config: &config::Config) -> crate::Result<Arc
             let cache = crate::cache::drivers::redis::new(config).await?;
             Ok(Arc::new(cache))
         }
-        #[cfg(feature = "cache_inmem")]
-        config::CacheConfig::InMem(config) => {
-            let cache = crate::cache::drivers::inmem::new(config);
-            Ok(Arc::new(cache))
-        }
         config::CacheConfig::Null => {
             let driver = crate::cache::drivers::null::new();
             Ok(Arc::new(Cache::new(driver)))

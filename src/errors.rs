@@ -127,11 +127,7 @@ pub enum Error {
     #[error(transparent)]
     Model(#[from] crate::model::ModelError),
 
-    #[cfg(feature = "bg_redis")]
-    #[error(transparent)]
-    Redis(#[from] redis::RedisError),
-
-    #[cfg(any(feature = "bg_pg", feature = "bg_sqlt"))]
+    #[cfg(feature = "bg_pg")]
     #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
 

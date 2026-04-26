@@ -62,11 +62,7 @@ impl Settings {
         let features = if prompt_selection.db.enable() {
             Features::default()
         } else {
-            let mut features = Features::disable_features();
-            if matches!(prompt_selection.background, wizard::BackgroundOption::Queue) {
-                features.names.push("bg_redis".to_string());
-            }
-            features
+            Features::disable_features()
         };
 
         Self {

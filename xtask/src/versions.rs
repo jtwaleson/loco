@@ -99,11 +99,6 @@ pub fn bump_version(version: &str) -> Result<()> {
     
     $ cd loco-new && cargo-publish
     
-    = docs =
-
-    $ cd docs-site
-    $ npm build
-    $ zola build && netlify deploy -p -d public
     "
     );
     Ok(())

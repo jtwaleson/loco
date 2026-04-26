@@ -7,8 +7,6 @@ use async_trait::async_trait;
 
 use super::CacheResult;
 
-#[cfg(feature = "cache_inmem")]
-pub mod inmem;
 pub mod null;
 #[cfg(feature = "cache_redis")]
 pub mod redis;

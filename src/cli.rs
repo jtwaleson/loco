@@ -24,7 +24,7 @@ use std::fmt::Write;
 use std::process::exit;
 use std::{collections::BTreeMap, path::PathBuf};
 
-#[cfg(any(feature = "bg_redis", feature = "bg_pg", feature = "bg_sqlt"))]
+#[cfg(feature = "bg_pg")]
 use crate::bgworker::JobStatus;
 #[cfg(debug_assertions)]
 use crate::controller;
@@ -109,7 +109,7 @@ enum Commands {
         #[clap(value_parser = parse_key_val::<String,String>)]
         params: Vec<(String, String)>,
     },
-    #[cfg(any(feature = "bg_redis", feature = "bg_pg", feature = "bg_sqlt"))]
+    #[cfg(feature = "bg_pg")]
     /// Managing jobs queue.
     Jobs {
         #[command(subcommand)]
@@ -589,7 +589,7 @@ impl DeploymentKind {
     }
 }
 
-#[cfg(any(feature = "bg_redis", feature = "bg_pg", feature = "bg_sqlt"))]
+#[cfg(feature = "bg_pg")]
 #[derive(Subcommand)]
 enum JobsCommands {
     /// Cancels jobs with the specified names, setting their status to
@@ -754,7 +754,7 @@ pub async fn main<H: Hooks, M: MigratorTrait>() -> crate::Result<()> {
                 run_db::<H, M>(&app_context, command.into()).await?;
             }
         }
-        #[cfg(any(feature = "bg_redis", feature = "bg_pg", feature = "bg_sqlt"))]
+        #[cfg(feature = "bg_pg")]
         Commands::Jobs { command } => {
             handle_job_command::<H>(command, &environment, app_context.config).await?;
         }
@@ -920,7 +920,7 @@ pub async fn main<H: Hooks>() -> crate::Result<()> {
             let vars = task::Vars::from_cli_args(params);
             run_task::<H>(&app_context, name.as_ref(), &vars).await?;
         }
-        #[cfg(any(feature = "bg_redis", feature = "bg_pg", feature = "bg_sqlt"))]
+        #[cfg(feature = "bg_pg")]
         Commands::Jobs { command } => {
             handle_job_command::<H>(command, &environment, app_context.config).await?
         }
@@ -1210,7 +1210,7 @@ fn create_root_span(environment: &Environment) -> tracing::Span {
     tracing::span!(tracing::Level::DEBUG, "app", environment = %environment)
 }
 
-#[cfg(any(feature = "bg_redis", feature = "bg_pg", feature = "bg_sqlt"))]
+#[cfg(feature = "bg_pg")]
 async fn handle_job_command<H: Hooks>(
     command: JobsCommands,
     environment: &Environment,
