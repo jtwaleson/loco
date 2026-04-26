@@ -43,7 +43,6 @@ pub fn all_resources(base_dir: &Path) -> Result<Vec<RunResults>> {
     let mut result = vec![];
     result.push(run(base_dir).expect("loco lib mast be tested"));
     result.extend(run_all_in_folder(&base_dir.join("examples"))?);
-    result.extend(run_all_in_folder(&base_dir.join("loco-new"))?);
 
     Ok(result)
 }

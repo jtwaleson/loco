@@ -17,7 +17,7 @@ fn test_migrations_flow(#[values("postgres", "sqlite")] db_kind: &str) {
         .expect("Should create temp folder");
     let loco_dev_path = current_dir().unwrap();
     let loco_dev_path = loco_dev_path.parent().unwrap();
-    // 1. install most recent dev cli: cd loco-new; cargo install --path . --force
+    // 1. install most recent dev cli from your fork and keep `loco` on PATH
     // 2. when running locally set LOCO_DEV_MODE_PATH=<to local loco path>
     // LOCO_DEV_MODE_PATH=../../ cargo run -- new
 
