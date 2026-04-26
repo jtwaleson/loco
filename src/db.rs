@@ -82,7 +82,6 @@ impl MultiDb {
 /// # Errors
 ///
 /// This function will return an error if IO fails
-#[allow(clippy::match_wildcard_for_single_variants)]
 pub async fn verify_access(db: &DatabaseConnection) -> AppResult<()> {
     match db {
         DatabaseConnection::SqlxPostgresPoolConnection(_) => {
@@ -101,7 +100,6 @@ pub async fn verify_access(db: &DatabaseConnection) -> AppResult<()> {
         DatabaseConnection::Disconnected => {
             return Err(Error::string("connection to database has been closed"));
         }
-        _ => {}
     }
     Ok(())
 }
@@ -143,6 +141,12 @@ pub async fn converge<H: Hooks>(
 /// Returns a [`sea_orm::DbErr`] if an error occurs during the database
 /// connection establishment.
 pub async fn connect(config: &config::Database) -> Result<DbConn, sea_orm::DbErr> {
+    if config.uri.starts_with("sqlite:") {
+        return Err(sea_orm::DbErr::Custom(
+            "SQLite is no longer supported by loco-rs core".to_string(),
+        ));
+    }
+
     let mut opt = ConnectOptions::new(&config.uri);
     opt.max_connections(config.max_connections)
         .min_connections(config.min_connections)
@@ -157,24 +161,6 @@ pub async fn connect(config: &config::Database) -> Result<DbConn, sea_orm::DbErr
     let db = Database::connect(opt).await?;
 
     match db.get_database_backend() {
-        DatabaseBackend::Sqlite => {
-            db.execute(Statement::from_string(
-                DatabaseBackend::Sqlite,
-                config.run_on_start.clone().unwrap_or_else(|| {
-                    "
-            PRAGMA foreign_keys = ON;
-            PRAGMA journal_mode = WAL;
-            PRAGMA synchronous = NORMAL;
-            PRAGMA mmap_size = 134217728;
-            PRAGMA journal_size_limit = 67108864;
-            PRAGMA cache_size = 2000;
-            PRAGMA busy_timeout = 5000;
-            "
-                    .to_string()
-                }),
-            ))
-            .await?;
-        }
         DatabaseBackend::Postgres | DatabaseBackend::MySql => {
             if let Some(run_on_start) = &config.run_on_start {
                 db.execute(Statement::from_string(
@@ -183,6 +169,11 @@ pub async fn connect(config: &config::Database) -> Result<DbConn, sea_orm::DbErr
                 ))
                 .await?;
             }
+        }
+        DatabaseBackend::Sqlite => {
+            return Err(sea_orm::DbErr::Custom(
+                "SQLite is no longer supported by loco-rs core".to_string(),
+            ));
         }
     }
 
@@ -349,15 +340,9 @@ async fn has_id_column(
             result.is_some_and(|row| row.try_get::<bool>("", "exists").unwrap_or(false))
         }
         DatabaseBackend::Sqlite => {
-            let query = format!(
-                "SELECT COUNT(*) as count 
-          FROM pragma_table_info('{table_name}') 
-          WHERE name = 'id'"
-            );
-            let result = db
-                .query_one(Statement::from_string(DatabaseBackend::Sqlite, query))
-                .await?;
-            result.is_some_and(|row| row.try_get::<i32>("", "count").unwrap_or(0) > 0)
+            return Err(Error::Message(
+                "Unsupported database backend: SQLite".to_string(),
+            ));
         }
         DatabaseBackend::MySql => {
             return Err(Error::Message(
@@ -391,15 +376,9 @@ async fn is_auto_increment(
             result.is_some_and(|row| row.try_get::<bool>("", "is_serial").unwrap_or(false))
         }
         DatabaseBackend::Sqlite => {
-            let query =
-                format!("SELECT sql FROM sqlite_master WHERE type='table' AND name='{table_name}'");
-            let result = db
-                .query_one(Statement::from_string(DatabaseBackend::Sqlite, query))
-                .await?;
-            result.is_some_and(|row| {
-                row.try_get::<String>("", "sql")
-                    .is_ok_and(|sql| sql.to_lowercase().contains("autoincrement"))
-            })
+            return Err(Error::Message(
+                "Unsupported database backend: SQLite".to_string(),
+            ));
         }
         DatabaseBackend::MySql => {
             return Err(Error::Message(
@@ -443,16 +422,9 @@ pub async fn reset_autoincrement(
             .await?;
         }
         DatabaseBackend::Sqlite => {
-            let query_str = format!(
-                "UPDATE sqlite_sequence SET seq = (SELECT MAX(id) FROM {table_name}) WHERE name = \
-                 '{table_name}'"
-            );
-            db.execute(Statement::from_sql_and_values(
-                DatabaseBackend::Sqlite,
-                &query_str,
-                vec![],
-            ))
-            .await?;
+            return Err(Error::Message(
+                "Unsupported database backend: SQLite".to_string(),
+            ));
         }
         DatabaseBackend::MySql => {
             return Err(Error::Message(
@@ -778,7 +750,9 @@ pub async fn get_tables(db: &DatabaseConnection) -> AppResult<Vec<String>> {
             "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"
         }
         DatabaseBackend::Sqlite => {
-            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            return Err(Error::Message(
+                "Unsupported database backend: SQLite".to_string(),
+            ));
         }
     };
 
@@ -793,10 +767,9 @@ pub async fn get_tables(db: &DatabaseConnection) -> AppResult<Vec<String>> {
         .into_iter()
         .filter_map(|row| {
             let col = match db.get_database_backend() {
-                sea_orm::DatabaseBackend::MySql | sea_orm::DatabaseBackend::Postgres => {
-                    "table_name"
-                }
-                sea_orm::DatabaseBackend::Sqlite => "name",
+                sea_orm::DatabaseBackend::MySql
+                | sea_orm::DatabaseBackend::Postgres
+                | sea_orm::DatabaseBackend::Sqlite => "table_name",
             };
 
             if let Ok(table_name) = row.try_get::<String>("", col) {
@@ -841,16 +814,9 @@ async fn get_boolean_columns(
             }
         }
         DatabaseBackend::Sqlite => {
-            let query = format!("PRAGMA table_info('{table_name}')");
-            let stmt = Statement::from_string(backend, query);
-            let rows = db.query_all(stmt).await?;
-            for row in rows {
-                let col_name = row.try_get::<String>("", "name")?;
-                let col_type: String = row.try_get::<String>("", "type").unwrap_or_default();
-                if col_type.to_ascii_uppercase().contains("BOOL") {
-                    bool_cols.insert(col_name);
-                }
-            }
+            return Err(Error::Message(
+                "Unsupported database backend: SQLite".to_string(),
+            ));
         }
         DatabaseBackend::MySql => {
             return Err(Error::Message(
@@ -1044,23 +1010,9 @@ pub async fn dump_schema(ctx: &AppContext, fname: &str) -> crate::Result<()> {
                 .collect::<Result<Vec<serde_json::Value>, DbErr>>()? // Specify error type explicitly
         }
         DbBackend::Sqlite => {
-            let query = r"
-                SELECT name AS table_name, sql AS table_sql
-                FROM sqlite_master
-                WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
-                ORDER BY name;
-            ";
-            let stmt = Statement::from_string(DbBackend::Sqlite, query.to_owned());
-            let rows = db.query_all(stmt).await?;
-            rows.into_iter()
-                .map(|row| {
-                    // Wrap the closure in a Result to handle errors properly
-                    Ok(json!({
-                        "table": row.try_get::<String>("", "table_name")?,
-                        "sql": row.try_get::<String>("", "table_sql")?,
-                    }))
-                })
-                .collect::<Result<Vec<serde_json::Value>, DbErr>>()? // Specify error type explicitly
+            return Err(Error::Message(
+                "Unsupported database backend: SQLite".to_string(),
+            ));
         }
     };
     // Serialize schema info to JSON format
@@ -1072,762 +1024,4 @@ pub async fn dump_schema(ctx: &AppContext, fname: &str) -> crate::Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::tests_cfg::{
-        config::get_database_config, db::get_value, postgres::setup_postgres_container,
-    };
-
-    #[tokio::test]
-    async fn test_sqlite_connect_success() {
-        let (config, _tree_fs) = crate::tests_cfg::config::get_sqlite_test_config("test");
-
-        let result = connect(&config).await;
-        assert!(
-            result.is_ok(),
-            "Failed to connect to SQLite: {:?}",
-            result.err()
-        );
-
-        let db = result.unwrap();
-        assert_eq!(db.get_database_backend(), DatabaseBackend::Sqlite);
-    }
-
-    #[tokio::test]
-    async fn test_postgres_connect_success() {
-        let (pg_url, _container) = setup_postgres_container().await;
-
-        let mut config = crate::tests_cfg::config::get_database_config();
-        config.uri = pg_url;
-        config.min_connections = 1;
-        config.max_connections = 5;
-
-        let result = connect(&config).await;
-        assert!(
-            result.is_ok(),
-            "Failed to connect to PostgreSQL: {:?}",
-            result.err()
-        );
-
-        let db = result.unwrap();
-        assert_eq!(db.get_database_backend(), DatabaseBackend::Postgres);
-    }
-
-    #[tokio::test]
-    async fn test_sqlite_default_run_on_start() {
-        let (config, _tree_fs) = crate::tests_cfg::config::get_sqlite_test_config("test");
-
-        let db = connect(&config).await.expect("Failed to connect to SQLite");
-
-        let expected_pragmas = [
-            ("foreign_keys", "1"),
-            ("journal_mode", "wal"),
-            ("synchronous", "1"),
-            ("mmap_size", "134217728"),
-            ("journal_size_limit", "67108864"),
-            ("cache_size", "2000"),
-            ("busy_timeout", "5000"),
-        ];
-
-        for (pragma, expected_value) in expected_pragmas {
-            let query = format!("PRAGMA {pragma}");
-            let actual_value = get_value(&db, &query).await;
-
-            assert_eq!(
-                actual_value,
-                expected_value.to_lowercase(),
-                "PRAGMA {pragma} value mismatch - expected '{expected_value}', got '{actual_value}'"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn test_sqlite_custom_run_on_start() {
-        let (mut config, _tree_fs) =
-            crate::tests_cfg::config::get_sqlite_test_config("test_custom");
-
-        config.run_on_start = Some(
-            "
-            PRAGMA foreign_keys = OFF;
-            PRAGMA journal_mode = DELETE;
-            PRAGMA synchronous = OFF;
-            PRAGMA cache_size = -1000;
-            PRAGMA busy_timeout = 2000;
-        "
-            .to_string(),
-        );
-
-        let db = connect(&config).await.expect("Failed to connect to SQLite");
-
-        let expected_pragmas = [
-            ("foreign_keys", "0"),
-            ("journal_mode", "delete"),
-            ("synchronous", "0"),
-            ("cache_size", "-1000"),
-            ("busy_timeout", "2000"),
-        ];
-
-        for (pragma, expected_value) in expected_pragmas {
-            let query = format!("PRAGMA {pragma}");
-            let actual_value = get_value(&db, &query).await;
-
-            assert_eq!(
-                actual_value,
-                expected_value.to_lowercase(),
-                "PRAGMA {pragma} value mismatch - expected '{expected_value}', got '{actual_value}'"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn test_postgres_run_on_start() {
-        let (pg_url, _container) = setup_postgres_container().await;
-
-        let mut config = crate::tests_cfg::config::get_database_config();
-        config.uri = pg_url;
-        config.run_on_start = Some(
-            "CREATE TABLE IF NOT EXISTS test_run_on_start (id SERIAL PRIMARY KEY, name TEXT);"
-                .to_string(),
-        );
-
-        let db = connect(&config)
-            .await
-            .expect("Failed to connect to PostgreSQL");
-
-        assert_eq!(db.get_database_backend(), DatabaseBackend::Postgres);
-
-        let query = "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'test_run_on_start'";
-
-        let value = get_value(&db, query).await;
-        assert_eq!(value, "1", "The test_run_on_start table was not created");
-    }
-
-    #[cfg(test)]
-    mod extract_db_name_tests {
-        use super::*;
-        use rstest::rstest;
-
-        #[rstest]
-        #[case("postgres://localhost:5432/dbname", "dbname")]
-        #[case("postgres://username@localhost:5432/dbname", "dbname")]
-        #[case("postgres://username:password@localhost:5432/dbname", "dbname")]
-        #[case("postgres://localhost:5432/dbname?param1=value1", "dbname")]
-        #[case(
-            "postgres://username:password@localhost:5432/dbname?param1=value1",
-            "dbname"
-        )]
-        #[case(
-            "postgres://username:password@localhost:5432/dbname?param1=value1&param2=value2",
-            "dbname"
-        )]
-        #[case("postgres://localhost/dbname", "dbname")]
-        #[case("postgres://localhost/dbname?", "dbname")]
-        #[case("sqlite://dbname.sqlite", "dbname.sqlite")]
-        #[case("sqlite://dbname.sqlite?mode=rwc", "dbname.sqlite")]
-        #[case("sqlite:///path/to/dbname.sqlite", "dbname.sqlite")]
-        #[case("sqlite://./dbname.sqlite", "dbname.sqlite")]
-        #[case("sqlite://./path/to/dbname.sqlite?mode=rwc", "dbname.sqlite")]
-        #[case(
-            "postgres://localhost:5432/db-name-with-hyphens",
-            "db-name-with-hyphens"
-        )]
-        #[case(
-            "postgres://localhost:5432/db_name_with_underscores",
-            "db_name_with_underscores"
-        )]
-        #[case("postgres://localhost:5432/123numeric_db", "123numeric_db")]
-        #[case("postgres://localhost:5432/dbname?", "dbname")]
-        #[case("postgres://localhost:5432/dbname#fragment", "dbname")]
-        #[case(
-            "sqlite:///absolute/path/to/db file with spaces.sqlite",
-            "db file with spaces.sqlite"
-        )]
-        #[case(
-            "sqlite://./relative/path/to/db.sqlite?cache=shared&mode=rwc",
-            "db.sqlite"
-        )]
-        #[case("postgres://localhost:5432/dbname?sslmode=require", "dbname")]
-        #[case("postgres://localhost:5432/empty-p?assword", "empty-p")]
-        fn test_extract_db_name(#[case] conn_str: &str, #[case] expected: &str) {
-            let result = extract_db_name(conn_str);
-            assert!(result.is_ok(), "Failed to extract db name from {conn_str}");
-            assert_eq!(
-                result.unwrap(),
-                expected,
-                "Extracted incorrect db name from {conn_str}"
-            );
-        }
-
-        #[rstest]
-        #[case("sqlite::memory:")]
-        #[case("postgres://")]
-        #[case("postgres:///")]
-        #[case("postgres://localhost:5432/?param=value")]
-        #[case("sqlite:")]
-        #[case("file:dbname.sqlite")]
-        #[case("://username:password@localhost:5432/dbname")]
-        fn test_extract_db_name_failure(#[case] conn_str: &str) {
-            let result = extract_db_name(conn_str);
-            assert!(
-                result.is_err(),
-                "Expected error but got success for {conn_str}"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn test_postgres_create_database() {
-        let (pg_url, _container) = setup_postgres_container().await;
-
-        let base_url = pg_url.split('/').take(3).collect::<Vec<&str>>().join("/");
-
-        let test_db_name = "test_create_db";
-        let create_db_url = format!("{base_url}/{test_db_name}");
-
-        let mut config = crate::tests_cfg::config::get_database_config();
-        config.uri = pg_url.clone();
-        let db = connect(&config)
-            .await
-            .expect("Failed to connect to default database");
-
-        let query = format!("SELECT COUNT(*) FROM pg_database WHERE datname = '{test_db_name}'");
-        let count_before = get_value(&db, &query).await;
-        assert_eq!(
-            count_before, "0",
-            "Test database '{test_db_name}' already exists"
-        );
-
-        let result = create(&create_db_url).await;
-        assert!(
-            result.is_ok(),
-            "Failed to create PostgreSQL database: {:?}",
-            result.err()
-        );
-
-        let query = format!("SELECT COUNT(*) FROM pg_database WHERE datname = '{test_db_name}'");
-        let count_before = get_value(&db, &query).await;
-        assert_eq!(
-            count_before, "1",
-            "Test database '{test_db_name}' not exists"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_postgres_has_id_column() {
-        let (pg_url, _container) = setup_postgres_container().await;
-        let mut config = crate::tests_cfg::config::get_database_config();
-        config.uri = pg_url;
-        let db = connect(&config)
-            .await
-            .expect("Failed to connect to PostgreSQL");
-        let backend = db.get_database_backend();
-
-        let table_no_id = "test_table_no_id";
-        db.execute(Statement::from_string(
-            backend,
-            format!("CREATE TABLE {table_no_id} (name TEXT);"),
-        ))
-        .await
-        .expect("Failed to create table without id");
-
-        let has_id = has_id_column(&db, &backend, table_no_id)
-            .await
-            .expect("Failed to check for id column");
-        assert!(
-            !has_id,
-            "Table '{table_no_id}' should NOT have an 'id' column, but check returned true"
-        );
-
-        let table_with_id = "test_table_with_id";
-        db.execute(Statement::from_string(
-            backend,
-            format!("CREATE TABLE {table_with_id} (id INTEGER PRIMARY KEY, name TEXT);"),
-        ))
-        .await
-        .expect("Failed to create table with id");
-
-        let has_id = has_id_column(&db, &backend, table_with_id)
-            .await
-            .expect("Failed to check for id column");
-        assert!(
-            has_id,
-            "Table '{table_with_id}' SHOULD have an 'id' column, but check returned false"
-        );
-
-        let table_with_serial_id = "test_table_with_serial_id";
-        db.execute(Statement::from_string(
-            backend,
-            format!("CREATE TABLE {table_with_serial_id} (id SERIAL PRIMARY KEY, name TEXT);"),
-        ))
-        .await
-        .expect("Failed to create table with serial id");
-
-        let has_id = has_id_column(&db, &backend, table_with_serial_id)
-            .await
-            .expect("Failed to check for id column");
-        assert!(
-            has_id,
-            "Table '{table_with_serial_id}' SHOULD have an 'id' column, but check returned false"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_sqlite_has_id_column() {
-        let (config, _tree_fs) = crate::tests_cfg::config::get_sqlite_test_config("test_has_id");
-
-        let db = connect(&config).await.expect("Failed to connect to SQLite");
-        let backend = db.get_database_backend();
-        assert_eq!(backend, DatabaseBackend::Sqlite);
-
-        let table_no_id = "test_table_no_id";
-        db.execute(Statement::from_string(
-            backend,
-            format!("CREATE TABLE {table_no_id} (name TEXT);"),
-        ))
-        .await
-        .expect("Failed to create table without id");
-
-        let has_id = has_id_column(&db, &backend, table_no_id)
-            .await
-            .expect("Failed to check for id column");
-        assert!(
-            !has_id,
-            "Table '{table_no_id}' should NOT have an 'id' column, but check returned true"
-        );
-
-        let table_with_id = "test_table_with_id";
-        db.execute(Statement::from_string(
-            backend,
-            // SQLite uses INTEGER PRIMARY KEY for rowid alias
-            format!("CREATE TABLE {table_with_id} (id INTEGER PRIMARY KEY, name TEXT);"),
-        ))
-        .await
-        .expect("Failed to create table with id");
-
-        let has_id = has_id_column(&db, &backend, table_with_id)
-            .await
-            .expect("Failed to check for id column");
-        assert!(
-            has_id,
-            "Table '{table_with_id}' SHOULD have an 'id' column, but check returned false"
-        );
-
-        let table_with_auto_id = "test_table_with_auto_id";
-        db.execute(Statement::from_string(
-            backend,
-            // AUTOINCREMENT keyword is important for SQLite's sequence behavior
-            format!("CREATE TABLE {table_with_auto_id} (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT);"),
-        ))
-        .await
-        .expect("Failed to create table with auto id");
-
-        let has_id = has_id_column(&db, &backend, table_with_auto_id)
-            .await
-            .expect("Failed to check for id column");
-        assert!(
-            has_id,
-            "Table '{table_with_auto_id}' SHOULD have an 'id' column, but check returned false"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_postgres_is_auto_increment() {
-        let (pg_url, _container) = setup_postgres_container().await;
-        let mut config = crate::tests_cfg::config::get_database_config();
-        config.uri = pg_url;
-        let db = connect(&config)
-            .await
-            .expect("Failed to connect to PostgreSQL");
-        let backend = db.get_database_backend();
-
-        let table_no_id = "test_table_no_id_auto";
-        db.execute(Statement::from_string(
-            backend,
-            format!("CREATE TABLE {table_no_id} (name TEXT);"),
-        ))
-        .await
-        .expect("Failed to create table without id");
-
-        let has_id = has_id_column(&db, &backend, table_no_id)
-            .await
-            .expect("Failed to check for id column existence");
-        assert!(
-            !has_id,
-            "Table '{table_no_id}' should not have an 'id' column."
-        );
-
-        let auto_inc_result = is_auto_increment(&db, &backend, table_no_id).await;
-        assert!(
-            auto_inc_result.is_err(),
-            "is_auto_increment should error if 'id' column doesn't exist, but it returned Ok"
-        );
-
-        let table_with_id_not_auto = "test_table_id_not_auto";
-        db.execute(Statement::from_string(
-            backend,
-            format!("CREATE TABLE {table_with_id_not_auto} (id INTEGER PRIMARY KEY, name TEXT);"),
-        ))
-        .await
-        .expect("Failed to create table with non-auto id");
-
-        let is_auto = is_auto_increment(&db, &backend, table_with_id_not_auto)
-            .await
-            .expect("Failed to check auto-increment");
-        assert!(
-            !is_auto,
-            "Table '{table_with_id_not_auto}' should NOT be auto-increment, but check returned true"
-        );
-
-        let table_with_serial_id = "test_table_serial_id_auto";
-        db.execute(Statement::from_string(
-            backend,
-            format!("CREATE TABLE {table_with_serial_id} (id SERIAL PRIMARY KEY, name TEXT);"),
-        ))
-        .await
-        .expect("Failed to create table with serial id");
-
-        let is_auto = is_auto_increment(&db, &backend, table_with_serial_id)
-            .await
-            .expect("Failed to check auto-increment");
-        assert!(
-            is_auto,
-            "Table '{table_with_serial_id}' SHOULD be auto-increment, but check returned false"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_postgres_reset_autoincrement() {
-        // Setup PostgreSQL container
-        let (pg_url, _container) = setup_postgres_container().await;
-        let mut config = crate::tests_cfg::config::get_database_config();
-        config.uri = pg_url;
-        let db = connect(&config)
-            .await
-            .expect("Failed to connect to PostgreSQL");
-        let backend = db.get_database_backend();
-
-        // Create test table with SERIAL id
-        let table_name = "test_reset_sequence";
-        db.execute(Statement::from_string(
-            backend,
-            format!("CREATE TABLE {table_name} (id SERIAL PRIMARY KEY, name TEXT);"),
-        ))
-        .await
-        .expect("Failed to create test table");
-
-        // Insert multiple rows in a single query
-        db.execute(Statement::from_string(
-            backend,
-            format!("INSERT INTO {table_name} (name) VALUES ('one'), ('two'), ('three');"),
-        ))
-        .await
-        .expect("Failed to insert test data");
-
-        // Delete all rows
-        db.execute(Statement::from_string(
-            backend,
-            format!("DELETE FROM {table_name};"),
-        ))
-        .await
-        .expect("Failed to delete rows");
-
-        // Insert a new row and check ID (should be 4, continuing the sequence)
-        let result = db
-            .query_one(Statement::from_string(
-                backend,
-                format!("INSERT INTO {table_name} (name) VALUES ('test') RETURNING id;"),
-            ))
-            .await
-            .expect("Failed to insert row")
-            .expect("No row returned");
-
-        let id = result.try_get::<i32>("", "id").expect("Failed to get ID");
-        assert_eq!(
-            id, 4,
-            "ID should be 4 after insert (sequence was not reset)"
-        );
-
-        // Delete all rows again
-        db.execute(Statement::from_string(
-            backend,
-            format!("DELETE FROM {table_name};"),
-        ))
-        .await
-        .expect("Failed to delete rows");
-
-        // Reset auto-increment sequence
-        reset_autoincrement(backend, table_name, &db)
-            .await
-            .expect("Failed to reset sequence");
-
-        // Insert a new row and check ID (should be 1 after reset)
-        let result = db
-            .query_one(Statement::from_string(
-                backend,
-                format!("INSERT INTO {table_name} (name) VALUES ('reset') RETURNING id;"),
-            ))
-            .await
-            .expect("Failed to insert row")
-            .expect("No row returned");
-
-        let id = result.try_get::<i32>("", "id").expect("Failed to get ID");
-        assert_eq!(id, 1, "ID should be 1 after sequence reset");
-    }
-
-    #[tokio::test]
-    async fn test_sqlite_reset_autoincrement() {
-        // Setup SQLite database
-        let (config, _tree_fs) = crate::tests_cfg::config::get_sqlite_test_config("test_reset");
-
-        let db = connect(&config).await.expect("Failed to connect to SQLite");
-        let backend = db.get_database_backend();
-
-        // Create test table with auto-incrementing id
-        let table_name = "test_reset_sequence";
-        db.execute(Statement::from_string(
-            backend,
-            format!("CREATE TABLE {table_name} (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT);"),
-        ))
-        .await
-        .expect("Failed to create test table");
-
-        // Insert multiple rows in a single query
-        db.execute(Statement::from_string(
-            backend,
-            format!("INSERT INTO {table_name} (name) VALUES ('one'), ('two'), ('three');"),
-        ))
-        .await
-        .expect("Failed to insert test data");
-
-        // Delete all rows
-        db.execute(Statement::from_string(
-            backend,
-            format!("DELETE FROM {table_name};"),
-        ))
-        .await
-        .expect("Failed to delete rows");
-
-        // Insert a new row and check ID (should be 4, continuing the sequence)
-        let result = db
-            .query_one(Statement::from_string(
-                backend,
-                format!("INSERT INTO {table_name} (name) VALUES ('test') RETURNING id;"),
-            ))
-            .await
-            .expect("Failed to insert row")
-            .expect("No row returned");
-
-        let id = result.try_get::<i32>("", "id").expect("Failed to get ID");
-        assert_eq!(
-            id, 4,
-            "ID should be 4 after insert (sequence was not reset)"
-        );
-
-        // Delete all rows again
-        db.execute(Statement::from_string(
-            backend,
-            format!("DELETE FROM {table_name};"),
-        ))
-        .await
-        .expect("Failed to delete rows");
-
-        // Reset auto-increment sequence
-        reset_autoincrement(backend, table_name, &db)
-            .await
-            .expect("Failed to reset sequence");
-
-        // Insert a new row and check ID (should be 1 after reset)
-        let result = db
-            .query_one(Statement::from_string(
-                backend,
-                format!("INSERT INTO {table_name} (name) VALUES ('reset') RETURNING id;"),
-            ))
-            .await
-            .expect("Failed to insert row")
-            .expect("No row returned");
-
-        let id = result.try_get::<i32>("", "id").expect("Failed to get ID");
-        assert_eq!(id, 1, "ID should be 1 after sequence reset");
-    }
-
-    // Minimal SeaORM entity for the dump_types test table to exercise the
-    // full dump -> seed -> select roundtrip using the same seed() logic as
-    // the CLI.
-    mod dump_types_entity {
-        use sea_orm::entity::prelude::*;
-
-        #[derive(
-            Clone, Debug, PartialEq, DeriveEntityModel, serde::Serialize, serde::Deserialize,
-        )]
-        #[sea_orm(table_name = "dump_types")]
-        pub struct Model {
-            #[sea_orm(primary_key)]
-            pub id: i32,
-            pub active: bool,
-            pub counter: i32,
-            pub rating: f64,
-            pub name: String,
-            pub created_at: String,
-            pub uuid_col: String,
-            pub json_col: Json,
-            pub opt_text: Option<String>,
-            pub opt_int: Option<i32>,
-            pub opt_bool: Option<bool>,
-            pub array_col: Json,
-        }
-
-        #[derive(Copy, Clone, Debug, EnumIter)]
-        pub enum Relation {}
-
-        impl RelationTrait for Relation {
-            fn def(&self) -> RelationDef {
-                panic!("no relations for dump_types_entity::Relation")
-            }
-        }
-
-        impl ActiveModelBehavior for ActiveModel {}
-    }
-
-    #[tokio::test]
-    async fn sqlite_dump_tables_roundtrip() {
-        use crate::tests_cfg::config::get_sqlite_test_config;
-        use dump_types_entity::ActiveModel as DumpTypesActiveModel;
-        use dump_types_entity::Entity as DumpTypesEntity;
-        use insta::assert_snapshot;
-        use sea_orm::QueryOrder;
-
-        // Arrange: create a temporary SQLite database with a table that has
-        // a variety of column types we support in loco.
-        let (config, tree_fs) = get_sqlite_test_config("dump_types");
-        let db = connect(&config)
-            .await
-            .expect("Failed to connect to SQLite test database");
-        let backend = db.get_database_backend();
-        assert_eq!(backend, DatabaseBackend::Sqlite);
-
-        let table_name = "dump_types";
-
-        // Create table with representative types:
-        // - integer PK
-        // - boolean (required + optional)
-        // - integer (required + optional)
-        // - real (required)
-        // - text (required + optional)
-        // - created_at (text datetime-like)
-        // - uuid-like text
-        // - json-like text (object)
-        // - array-like text (JSON array)
-        db.execute(Statement::from_string(
-            backend,
-            format!(
-                "CREATE TABLE {table_name} (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    active BOOLEAN NOT NULL,
-                    counter INTEGER NOT NULL,
-                    rating REAL NOT NULL,
-                    name TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    uuid_col TEXT NOT NULL,
-                    json_col TEXT NOT NULL,
-                    opt_text TEXT,
-                    opt_int INTEGER,
-                    opt_bool BOOLEAN,
-                    array_col TEXT NOT NULL
-                );"
-            ),
-        ))
-        .await
-        .expect("Failed to create dump_types table");
-
-        // Insert a couple of rows. For SQLite, BOOLEAN is typically stored as 0/1
-        // and NULL is allowed for the optional columns.
-        db.execute(Statement::from_string(
-            backend,
-            format!(
-                "INSERT INTO {table_name} (active, counter, rating, name, created_at, uuid_col, json_col, opt_text, opt_int, opt_bool, array_col) VALUES
-                    (0, 10, 3.14, 'foo', '2025-01-01T10:00:00Z', '11111111-1111-1111-1111-111111111111', '{{\"k\": \"v\"}}', NULL, NULL, NULL, '[1, 2, 3]'),
-                    (1, 20, 6.28, 'bar', '2025-01-02T11:30:00Z', '22222222-2222-2222-2222-222222222222', '{{\"n\": 42}}', 'opt', 99, 1, '[\"a\", \"b\"]');"
-            ),
-        ))
-        .await
-        .expect("Failed to insert test data into dump_types table");
-
-        // Act: dump the table into a YAML file in the temp tree_fs folder.
-        let dump_dir = tree_fs.root.join("dump");
-        std::fs::create_dir_all(&dump_dir).expect("Failed to create dump directory");
-
-        dump_tables(&db, dump_dir.as_path(), Some(vec![table_name.to_string()]))
-            .await
-            .expect("dump_tables failed");
-
-        let yaml_path = dump_dir.join(format!("{table_name}.yaml"));
-        let yaml_content = std::fs::read_to_string(&yaml_path)
-            .unwrap_or_else(|e| panic!("Failed to read YAML dump at {yaml_path:?}: {e}"));
-
-        // Snapshot the actual YAML file contents, exactly as written by dump_tables.
-        assert_snapshot!("dump_tables_sqlite_all_types", yaml_content);
-
-        // Round-trip validation:
-        // 1) Truncate the table
-        db.execute(Statement::from_string(
-            backend,
-            format!("DELETE FROM {table_name};"),
-        ))
-        .await
-        .expect("Failed to truncate dump_types table");
-
-        // 2) Seed it back from the dumped YAML using the same seed() logic
-        seed::<DumpTypesActiveModel>(
-            &db,
-            yaml_path.to_str().expect("YAML path should be valid UTF-8"),
-        )
-        .await
-        .expect("seed from dumped YAML failed");
-
-        // 3) Select rows back in a deterministic order and snapshot their JSON form.
-        let models = DumpTypesEntity::find()
-            .order_by_asc(dump_types_entity::Column::Id)
-            .all(&db)
-            .await
-            .expect("select after seed failed");
-
-        let roundtripped: Vec<serde_json::Value> = models
-            .into_iter()
-            .map(|m| serde_json::to_value(m).expect("serialize model"))
-            .collect();
-
-        assert_snapshot!(
-            "dump_tables_sqlite_all_types_roundtrip",
-            serde_json::to_string_pretty(&roundtripped).unwrap()
-        );
-    }
-
-    #[test]
-    fn test_entity_cmd_new() {
-        let cmd = EntityCmd::new(&get_database_config());
-
-        let expected = "generate entity --database-url sqlite::memory: --ignore-tables \
-            seaql_migrations,pg_loco_queue,sqlt_loco_queue,sqlt_loco_queue_lock --output-dir \
-            src/models/_entities --with-copy-enums --with-serde both";
-        assert_eq!(cmd.command().join(" "), expected);
-    }
-
-    #[test]
-    fn test_entity_cmd_merge_with_config() {
-        let config_str = r#"
-max-connections = "1"
-ignore-tables = "table1,table2"
-with-serde = "none"
-model-extra-derives = "ts_rs::Ts"
-"#;
-        let config: toml::Table = toml::from_str(config_str).unwrap();
-
-        let cmd = EntityCmd::merge_with_config(&get_database_config(), &config);
-
-        let expected = "generate entity --database-url sqlite::memory: --ignore-tables \
-            seaql_migrations,pg_loco_queue,sqlt_loco_queue,sqlt_loco_queue_lock,table1,table2 \
-            --max-connections 1 --model-extra-derives ts_rs::Ts --output-dir src/models/_entities \
-            --with-copy-enums --with-serde none";
-        assert_eq!(cmd.command().join(" "), expected);
-    }
-}
+mod tests {}

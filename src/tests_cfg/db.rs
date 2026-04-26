@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use async_trait::async_trait;
-use sea_orm::Statement;
+use sea_orm::{ConnectionTrait, Statement};
 
 use crate::{
     app::{AppContext, Hooks, Initializer},
@@ -52,10 +52,7 @@ pub async fn get_value(conn: &sea_orm::DatabaseConnection, query: &str) -> Strin
 /// # Panics
 /// Disabled the connection validation, should pass always
 pub async fn dummy_connection() -> sea_orm::DatabaseConnection {
-    let mut opt = sea_orm::ConnectOptions::new("sqlite::memory:");
-    opt.test_before_acquire(false);
-
-    sea_orm::Database::connect(opt).await.unwrap()
+    sea_orm::DatabaseConnection::Disconnected
 }
 
 /// Creating a failing db connection for tests

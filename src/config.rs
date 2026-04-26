@@ -180,7 +180,6 @@ pub struct LoggerFileAppender {
 pub struct Database {
     /// The URI for connecting to the database. For example:
     /// * Postgres: `postgres://root:12341234@localhost:5432/myapp_development`
-    /// * Sqlite: `sqlite://db.sqlite?mode=rwc`
     pub uri: String,
 
     /// Enable `SQLx` statement logging
@@ -219,23 +218,8 @@ pub struct Database {
     #[serde(default)]
     pub dangerously_recreate: bool,
 
-    // Execute query after initializing the DB
-    /// for e.g. this can be used to confiure PRAGMAs for `SQLite` where you can pass all values as a string.
-    /// Default values are:
-    ///
-    /// PRAGMA `foreign_keys` = ON;
-    ///
-    /// PRAGMA `journal_mode` = WAL;
-    ///
-    /// PRAGMA `synchronous` = NORMAL;
-    ///
-    /// PRAGMA `mmap_size` = 134217728;
-    ///
-    /// PRAGMA `journal_size_limit` = 67108864;
-    ///
-    /// PRAGMA `cache_size` = 2000;
-    ///
-    /// PRAGMA `busy_timeout` = 5000;
+    // Execute query after initializing the DB.
+    /// For example, this can be used to configure session settings for Postgres.
     pub run_on_start: Option<String>,
 }
 

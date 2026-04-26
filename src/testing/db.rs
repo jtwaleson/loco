@@ -1,12 +1,10 @@
 use crate::{
     app::{AppContext, Hooks},
-    db, hash, Error, Result,
+    db, hash, Result,
 };
 use sqlx::{Pool, Postgres};
 use std::future::Future;
-use std::path::PathBuf;
 use std::pin::Pin;
-use tree_fs::TreeBuilder;
 
 /// Seeds data into the database.
 ///
@@ -44,8 +42,6 @@ pub async fn seed<H: Hooks>(ctx: &AppContext) -> Result<()> {
 pub fn init_test_db_creation(conn_str: &str) -> Result<Box<dyn TestSupport>> {
     if conn_str.starts_with("postgres://") {
         PostgresTest::new(conn_str).map(|test| Box::new(test) as Box<dyn TestSupport>)
-    } else if conn_str.starts_with("sqlite://") {
-        SqliteTest::new(conn_str).map(|test| Box::new(test) as Box<dyn TestSupport>)
     } else {
         Ok(Box::new(Any::new(conn_str)))
     }
@@ -127,54 +123,6 @@ impl TestSupport for PostgresTest {
     }
 }
 
-pub struct SqliteTest {
-    connection_string: String,
-    db_folder: PathBuf,
-    _tree: tree_fs::Tree, // Keep the tree alive while the test runs
-}
-
-impl SqliteTest {
-    /// Prepare new `SQLite` connection string.
-    ///
-    /// # Errors
-    /// Returns an error if could not prepare the connection string
-    pub fn new(conn_str: &str) -> Result<Self> {
-        let db_name = db::extract_db_name(conn_str)?;
-
-        let tree = TreeBuilder::default()
-            .add_empty_file("test.sqlite")
-            .create()
-            .map_err(|err| {
-                Error::string(&format!(
-                    "could not create test database directory. err: {err}"
-                ))
-            })?;
-
-        Ok(Self {
-            connection_string: conn_str.replace(
-                db_name,
-                &tree.root.join("test.sqlite").display().to_string(),
-            ),
-            db_folder: tree.root.clone(),
-            _tree: tree,
-        })
-    }
-}
-
-#[async_trait::async_trait]
-impl TestSupport for SqliteTest {
-    fn get_connection_str(&self) -> &str {
-        &self.connection_string
-    }
-    fn init_db<'a>(&'a self) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
-        Box::pin(async move {})
-    }
-
-    fn cleanup_db(&self) {
-        std::fs::remove_dir_all(&self.db_folder).expect("Could not delete sqlite test db");
-    }
-}
-
 pub struct Any {
     connection_string: String,
 }
@@ -215,18 +163,6 @@ mod tests {
 
         println!("schema_name: {row:#?}");
         row.get(0)
-    }
-
-    #[tokio::test]
-    async fn sqlite_test_support() {
-        let conn = "sqlite://test.sqlite?mode=rwc";
-        let sqlite = SqliteTest::new(conn).expect("create Sqlite test support");
-
-        sqlite.init_db().await;
-
-        assert!(sqlite.db_folder.exists());
-        sqlite.cleanup_db();
-        assert!(!sqlite.db_folder.exists());
     }
 
     #[tokio::test]

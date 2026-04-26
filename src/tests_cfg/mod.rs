@@ -7,6 +7,4 @@ pub mod db;
 pub mod postgres;
 #[cfg(feature = "bg_pg")]
 pub mod queue;
-#[cfg(test)]
-pub mod redis;
 pub mod task;

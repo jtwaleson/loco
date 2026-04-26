@@ -6,8 +6,6 @@ use crate::{
     logger, scheduler,
 };
 
-use tree_fs::{Tree, TreeBuilder};
-
 #[must_use]
 pub fn test_config() -> Config {
     Config {
@@ -57,7 +55,7 @@ pub fn test_config() -> Config {
 #[must_use]
 pub fn get_database_config() -> config::Database {
     config::Database {
-        uri: "sqlite::memory:".to_string(),
+        uri: "postgres://postgres:postgres@localhost:5432/postgres".to_string(),
         enable_logging: false,
         min_connections: 1,
         max_connections: 1,
@@ -69,31 +67,4 @@ pub fn get_database_config() -> config::Database {
         dangerously_recreate: false,
         run_on_start: None,
     }
-}
-
-/// Creates a `SQLite` test database configuration with a temporary file
-///
-/// Returns both the database configuration and the [`tree_fs`] temporary folder
-///
-/// # Panics
-///
-/// Panics if the temporary folder cannot be created.
-#[must_use]
-pub fn get_sqlite_test_config(db_filename: &str) -> (config::Database, Tree) {
-    let tree_fs = TreeBuilder::default()
-        .drop(true)
-        .create()
-        .expect("create temp folder");
-
-    let mut config = get_database_config();
-    config.uri = format!(
-        "sqlite://{}",
-        tree_fs
-            .root
-            .join(format!("{db_filename}.db?mode=rwc"))
-            .to_str()
-            .unwrap()
-    );
-
-    (config, tree_fs)
 }
