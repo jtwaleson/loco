@@ -16,7 +16,6 @@ use dashmap::DashMap;
 use crate::{
     bgworker::{self, Queue},
     boot::{shutdown_signal, BootResult, ServeParams, StartMode},
-    cache::{self},
     config::Config,
     controller::{
         middleware::{self, MiddlewareLayer},
@@ -24,7 +23,6 @@ use crate::{
     },
     environment::Environment,
     mailer::EmailSender,
-    storage::Storage,
     task::Tasks,
     Result,
 };
@@ -263,10 +261,6 @@ pub struct AppContext {
     pub config: Config,
     /// An optional email sender component that can be used to send email.
     pub mailer: Option<EmailSender>,
-    // An optional storage instance for the application
-    pub storage: Arc<Storage>,
-    // Cache instance for the application
-    pub cache: Arc<cache::Cache>,
     /// Shared store for arbitrary application data
     pub shared_store: Arc<SharedStore>,
 }

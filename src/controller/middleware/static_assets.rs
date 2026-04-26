@@ -21,14 +21,12 @@ use axum::{
     extract::Request,
     http::header::{HeaderValue, CACHE_CONTROL},
     middleware::Next,
-    response::Response,
     Router as AXRouter,
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tower_http::services::{ServeDir, ServeFile};
-use tower_http::set_header::SetResponseHeaderLayer;
 
 use crate::{app::AppContext, controller::middleware::MiddlewareLayer, Error, Result};
 

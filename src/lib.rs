@@ -24,7 +24,6 @@ mod tera;
 pub mod app;
 pub mod auth;
 pub mod boot;
-pub mod cache;
 #[cfg(feature = "cli")]
 pub mod cli;
 pub mod config;
@@ -41,7 +40,6 @@ pub mod task;
 pub mod testing;
 #[cfg(feature = "testing")]
 pub use axum_test::TestServer;
-pub mod storage;
 #[cfg(feature = "testing")]
 pub mod tests_cfg;
 pub mod validation;

@@ -18,7 +18,7 @@ use crate::db;
 use crate::{
     app::{AppContext, Hooks, Initializer},
     banner::print_banner,
-    bgworker, cache,
+    bgworker,
     config::{self, Config, WorkerMode},
     controller::ListRoutes,
     env_vars,
@@ -27,7 +27,6 @@ use crate::{
     mailer::{EmailSender, MailerWorker},
     prelude::BackgroundWorker,
     scheduler::{self, Scheduler},
-    storage::{self, Storage},
     task::{self, Tasks},
     Result,
 };
@@ -379,8 +378,6 @@ pub async fn create_context<H: Hooks>(
         #[cfg(feature = "with-db")]
         db,
         queue_provider,
-        storage: Storage::single(storage::drivers::null::new()).into(),
-        cache: cache::create_cache_provider(&config).await?,
         config,
         mailer,
         shared_store: Arc::new(crate::app::SharedStore::default()),

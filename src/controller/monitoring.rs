@@ -3,8 +3,6 @@
 //! application and its dependencies.
 
 use super::{format, routes::Routes};
-#[cfg(feature = "cache_redis")]
-use crate::config;
 use crate::{app::AppContext, Result};
 use axum::{extract::State, response::Response, routing::get};
 use serde::Serialize;
@@ -52,21 +50,6 @@ pub async fn readiness(State(ctx): State<AppContext>) -> Result<Response> {
         }
     }
 
-    // Check cache connection
-    #[cfg(feature = "cache_redis")]
-    {
-        match ctx.config.cache {
-            #[cfg(feature = "cache_redis")]
-            config::CacheConfig::Redis(_) => {
-                if let Err(error) = &ctx.cache.driver.ping().await {
-                    tracing::error!(err.msg = %error, err.detail = ?error, "readiness_cache_ping_error");
-                    return format::json(Health { ok: false });
-                }
-            }
-            config::CacheConfig::Null => (),
-        }
-    }
-
     format::json(Health { ok: true })
 }
 
@@ -82,12 +65,9 @@ pub fn routes() -> Routes {
 mod tests {
     use axum::routing::get;
     use loco_rs::tests_cfg::db::fail_connection;
-    use loco_rs::{bgworker, cache, config, controller::monitoring, tests_cfg};
+    use loco_rs::{bgworker, config, controller::monitoring, tests_cfg};
     use serde_json::Value;
     use tower::ServiceExt;
-
-    #[cfg(feature = "cache_redis")]
-    use crate::tests_cfg::redis::setup_redis_container;
 
     #[tokio::test]
     async fn ping_works() {
@@ -208,88 +188,6 @@ mod tests {
     async fn readiness_with_db_failure() {
         let mut ctx = tests_cfg::app::get_app_context().await;
         ctx.db = fail_connection().await;
-
-        // Create a router with the readiness route
-        let router = axum::Router::new()
-            .route("/_readiness", get(monitoring::readiness))
-            .with_state(ctx);
-
-        // Create a request
-        let req = axum::http::Request::builder()
-            .uri("/_readiness")
-            .method("GET")
-            .body(axum::body::Body::empty())
-            .unwrap();
-
-        // Test the router directly using oneshot
-        let response = router.oneshot(req).await.unwrap();
-        assert_eq!(response.status(), 200);
-
-        // Get the response body
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let res_json: Value = serde_json::from_slice(&body).expect("Valid JSON response");
-        assert_eq!(res_json["ok"], false);
-    }
-
-    #[cfg(feature = "cache_redis")]
-    #[tokio::test]
-    async fn readiness_with_cache_redis_success() {
-        let (redis_url, _container) = setup_redis_container().await;
-        let mut ctx = tests_cfg::app::get_app_context().await;
-
-        // Create Redis cache driver and assign to ctx.cache
-        let redis_cache = cache::drivers::redis::new(&config::RedisCacheConfig {
-            uri: redis_url,
-            max_size: 10,
-        })
-        .await
-        .expect("Failed to create Redis cache");
-        ctx.cache = redis_cache.into();
-
-        // Create a router with the readiness route
-        let router = axum::Router::new()
-            .route("/_readiness", get(monitoring::readiness))
-            .with_state(ctx);
-
-        // Create a request
-        let req = axum::http::Request::builder()
-            .uri("/_readiness")
-            .method("GET")
-            .body(axum::body::Body::empty())
-            .unwrap();
-
-        // Test the router directly using oneshot
-        let response = router.oneshot(req).await.unwrap();
-        assert_eq!(response.status(), 200);
-
-        // Get the response body
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let res_json: Value = serde_json::from_slice(&body).expect("Valid JSON response");
-        assert_eq!(res_json["ok"], true);
-    }
-
-    #[cfg(feature = "cache_redis")]
-    #[tokio::test]
-    async fn readiness_with_cache_redis_failure() {
-        let mut ctx = tests_cfg::app::get_app_context().await;
-        let failour_redis_url = "redis://127.0.0.2:0";
-        // Force config to Redis to ensure ping path executes, but swap driver to Null (which errors on ping)
-        ctx.config.cache = config::CacheConfig::Redis(loco_rs::config::RedisCacheConfig {
-            uri: failour_redis_url.to_string(),
-            max_size: 10,
-        });
-        // Create Redis cache driver and assign to ctx.cache
-        ctx.cache = cache::drivers::redis::new(&config::RedisCacheConfig {
-            uri: failour_redis_url.to_string(),
-            max_size: 10,
-        })
-        .await
-        .expect("Failed to create Redis cache")
-        .into();
 
         // Create a router with the readiness route
         let router = axum::Router::new()

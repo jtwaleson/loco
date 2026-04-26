@@ -131,12 +131,6 @@ pub enum Error {
     #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
 
-    #[error(transparent)]
-    Storage(#[from] crate::storage::StorageError),
-
-    #[error(transparent)]
-    Cache(#[from] crate::cache::CacheError),
-
     #[cfg(debug_assertions)]
     #[error(transparent)]
     Generators(#[from] loco_gen::Error),
