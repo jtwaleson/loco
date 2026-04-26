@@ -30,7 +30,7 @@ pub mod timeout;
 use axum::Router as AXRouter;
 use serde::{Deserialize, Serialize};
 
-use crate::{app::AppContext, environment::Environment, Result};
+use crate::{app::AppContext, Result};
 
 /// Trait representing the behavior of middleware components in the application.
 /// When implementing a new middleware, make sure to go over this checklist:
@@ -80,11 +80,6 @@ pub fn default_middleware_stack(ctx: &AppContext) -> Vec<Box<dyn MiddlewareLayer
     vec![
         // Limit Payload middleware with a default if none
         Box::new(middlewares.limit_payload.clone().unwrap_or_default()),
-        // CORS middleware with a default if none
-        Box::new(middlewares.cors.clone().unwrap_or_else(|| cors::Cors {
-            enable: false,
-            ..Default::default()
-        })),
         // Catch Panic middleware with a default if none
         Box::new(
             middlewares
@@ -99,43 +94,9 @@ pub fn default_middleware_stack(ctx: &AppContext) -> Vec<Box<dyn MiddlewareLayer
                 .clone()
                 .unwrap_or_else(|| etag::Etag { enable: true }),
         ),
-        // Remote IP middleware with a default if none
-        Box::new(
-            middlewares
-                .remote_ip
-                .clone()
-                .unwrap_or_else(|| remote_ip::RemoteIpMiddleware {
-                    enable: false,
-                    ..Default::default()
-                }),
-        ),
-        // Compression middleware with a default if none
-        Box::new(
-            middlewares
-                .compression
-                .clone()
-                .unwrap_or_else(|| compression::Compression { enable: false }),
-        ),
-        // Timeout Request middleware with a default if none
-        Box::new(
-            middlewares
-                .timeout_request
-                .clone()
-                .unwrap_or_else(|| timeout::TimeOut {
-                    enable: false,
-                    ..Default::default()
-                }),
-        ),
         // Static Assets middleware with a default if none
         Box::new(middlewares.static_assets.clone().unwrap_or_else(|| {
             static_assets::StaticAssets {
-                enable: false,
-                ..Default::default()
-            }
-        })),
-        // Secure Headers middleware with a default if none
-        Box::new(middlewares.secure_headers.clone().unwrap_or_else(|| {
-            secure_headers::SecureHeader {
                 enable: false,
                 ..Default::default()
             }
@@ -154,16 +115,6 @@ pub fn default_middleware_stack(ctx: &AppContext) -> Vec<Box<dyn MiddlewareLayer
                 .request_id
                 .clone()
                 .unwrap_or_else(|| request_id::RequestId { enable: true }),
-        ),
-        // Fallback middleware with a default if none
-        Box::new(
-            middlewares
-                .fallback
-                .clone()
-                .unwrap_or_else(|| fallback::Fallback {
-                    enable: ctx.environment != Environment::Production,
-                    ..Default::default()
-                }),
         ),
         // Powered by middleware with a default identifier
         Box::new(powered_by::new(ctx.config.server.ident.as_deref())),

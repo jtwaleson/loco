@@ -19,7 +19,6 @@ use {crate::boot::run_db, crate::db, sea_orm_migration::MigratorTrait};
 
 use clap::{ArgAction, ArgGroup, Parser, Subcommand, ValueHint};
 use colored::Colorize;
-use duct::cmd;
 use std::fmt::Write;
 use std::process::exit;
 use std::{collections::BTreeMap, path::PathBuf};
@@ -35,9 +34,8 @@ use crate::{
         start, RunDbCommand, ServeParams, StartMode,
     },
     config::Config,
-    doctor,
     environment::{resolve_from_env, Environment, DEFAULT_ENVIRONMENT},
-    logger, task, Error,
+    logger, task,
 };
 
 #[derive(Parser)]
@@ -141,27 +139,8 @@ enum Commands {
         #[command(subcommand)]
         component: ComponentArg,
     },
-    /// Validate and diagnose configurations.
-    Doctor {
-        /// print out the current configurations.
-        #[arg(short, long, action)]
-        config: bool,
-        #[arg(short, long, action)]
-        production: bool,
-    },
     /// Display the app version
     Version {},
-
-    /// Watch and restart the app
-    #[clap(alias("w"))]
-    Watch {
-        /// start worker
-        #[arg(short, long, action, value_delimiter = ',', num_args = 0..)]
-        worker: Option<Vec<String>>,
-        /// start same-process server and worker
-        #[arg(short, long, action)]
-        server_and_worker: bool,
-    },
 }
 
 #[cfg(debug_assertions)]
@@ -799,54 +778,8 @@ pub async fn main<H: Hooks, M: MigratorTrait>() -> crate::Result<()> {
         Commands::Generate { component } => {
             handle_generate_command::<H>(component, &app_context.config)?;
         }
-        Commands::Doctor {
-            config: config_arg,
-            production,
-        } => {
-            if config_arg {
-                println!("{}", &app_context.config);
-                println!("Environment: {}", &environment);
-            } else {
-                let mut should_exit = false;
-                for (_, check) in doctor::run_all::<H>(&app_context, production).await? {
-                    if !should_exit && !check.valid() {
-                        should_exit = true;
-                    }
-                    println!("{check}");
-                }
-                if should_exit {
-                    exit(1);
-                }
-            }
-        }
         Commands::Version {} => {
             println!("{}", H::app_version(),);
-        }
-
-        Commands::Watch {
-            worker,
-            server_and_worker,
-        } => {
-            // cargo-watch  -s 'cargo loco start'
-            let mut cmd_str = String::from("cargo loco start");
-
-            if let Some(worker_tags) = worker {
-                if worker_tags.is_empty() {
-                    cmd_str.push_str(" --worker");
-                } else {
-                    write!(cmd_str, " --worker={}", worker_tags.join(","))
-                        .expect("Failed to write to string");
-                }
-            } else if server_and_worker {
-                cmd_str.push_str(" --server-and-worker");
-            }
-
-            cmd("cargo-watch", &["-s", &cmd_str]).run().map_err(|err| {
-                Error::Message(format!(
-                    "failed to start with `cargo-watch`. Did you `cargo install \
-                         cargo-watch`?. error details: `{err}`",
-                ))
-            })?;
         }
     }
     Ok(())
@@ -936,53 +869,8 @@ pub async fn main<H: Hooks>() -> crate::Result<()> {
         Commands::Generate { component } => {
             handle_generate_command::<H>(component, &app_context.config)?;
         }
-        Commands::Doctor {
-            config: config_arg,
-            production,
-        } => {
-            if config_arg {
-                println!("{}", &app_context.config);
-                println!("Environment: {}", &environment);
-            } else {
-                let mut should_exit = false;
-                for (_, check) in doctor::run_all::<H>(&app_context, production).await? {
-                    if !should_exit && !check.valid() {
-                        should_exit = true;
-                    }
-                    println!("{check}");
-                }
-                if should_exit {
-                    exit(1);
-                }
-            }
-        }
         Commands::Version {} => {
             println!("{}", H::app_version(),);
-        }
-        Commands::Watch {
-            worker,
-            server_and_worker,
-        } => {
-            // cargo-watch  -s 'cargo loco start'
-            let mut cmd_str = String::from("cargo loco start");
-
-            if let Some(worker_tags) = worker {
-                if worker_tags.is_empty() {
-                    cmd_str.push_str(" --worker");
-                } else {
-                    write!(cmd_str, " --worker={}", worker_tags.join(","))
-                        .expect("Failed to write to string");
-                }
-            } else if server_and_worker {
-                cmd_str.push_str(" --server-and-worker");
-            }
-
-            cmd("cargo-watch", &["-s", &cmd_str]).run().map_err(|err| {
-                Error::Message(format!(
-                    "failed to start with `cargo-watch`. Did you `cargo install \
-                         cargo-watch`?. error details: `{err}`",
-                ))
-            })?;
         }
     }
     Ok(())
