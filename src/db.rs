@@ -82,6 +82,7 @@ impl MultiDb {
 /// # Errors
 ///
 /// This function will return an error if IO fails
+#[allow(unreachable_patterns)]
 pub async fn verify_access(db: &DatabaseConnection) -> AppResult<()> {
     match db {
         DatabaseConnection::SqlxPostgresPoolConnection(_) => {
@@ -99,6 +100,11 @@ pub async fn verify_access(db: &DatabaseConnection) -> AppResult<()> {
         }
         DatabaseConnection::Disconnected => {
             return Err(Error::string("connection to database has been closed"));
+        }
+        _ => {
+            return Err(Error::string(
+                "unsupported database backend; only Postgres is supported",
+            ));
         }
     }
     Ok(())
