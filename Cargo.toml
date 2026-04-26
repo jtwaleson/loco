@@ -36,8 +36,6 @@ with-db = [
     "dep:sqlx",
     "loco-gen/with-db",
 ]
-# Cache feature
-cache_redis = ["dep:bb8-redis", "dep:bb8"]
 bg_pg = ["dep:sqlx", "dep:ulid"]
 ## Testing feature flags
 integration_test = []
@@ -115,16 +113,6 @@ tree-fs = { version = "0.3", optional = true }
 chrono = { workspace = true }
 
 uuid = { version = "1.10.0", features = ["v4", "fast-rng"] }
-
-# File Upload
-opendal = { version = "0.54", default-features = false, features = [
-    "services-memory",
-    "services-fs",
-] }
-
-# cache
-bb8-redis = { version = "0.23", optional = true }
-bb8 = { version = "0.9", optional = true }
 
 # Scheduler
 tokio-cron-scheduler = { version = "0.11.0", features = ["signal"] }
