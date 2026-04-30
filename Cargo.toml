@@ -86,7 +86,6 @@ tracing-subscriber = { version = "0.3.16", default-features = false, features = 
 ] }
 tracing-appender = { version = "0.2.3", default-features = false }
 
-duct = { workspace = true }
 duct_sh = { version = "1.0.0" }
 
 tower-http = { workspace = true }
@@ -143,7 +142,6 @@ tower-http = { version = "0.6.8", features = [
     "compression-full",
 ] }
 heck = "0.4.0"
-duct = { version = "1.0.0" }
 
 [package.metadata.docs.rs]
 features = ["testing"]
