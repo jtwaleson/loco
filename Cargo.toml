@@ -1,6 +1,4 @@
 [workspace]
-members = ["xtask"]
-exclude = ["starters"]
 
 [workspace.package]
 edition = "2021"
@@ -29,7 +27,7 @@ default = [
 ]
 auth_jwt = ["dep:jsonwebtoken"]
 cli = ["dep:clap"]
-testing = ["dep:axum-test", "dep:scraper", "dep:tree-fs"]
+testing = []
 with-db = [
     "dep:sea-orm",
     "dep:sqlx",
@@ -72,7 +70,6 @@ regex = { workspace = true }
 # mailer
 tera = { workspace = true }
 heck = { workspace = true }
-cruet = "0.13.0"
 lettre = { version = "0.11.4", default-features = false, features = [
     "builder",
     "hostname",
@@ -105,9 +102,6 @@ bytes = "1.1"
 ipnetwork = "0.20.0"
 semver = "1"
 
-axum-test = { version = "17.0.1", optional = true }
-tree-fs = { version = "0.3", optional = true }
-
 chrono = { workspace = true }
 
 uuid = { version = "1.10.0", features = ["v4", "fast-rng"] }
@@ -123,8 +117,6 @@ sqlx = { version = "0.8.2", default-features = false, features = [
     "chrono",
 ], optional = true }
 ulid = { version = "1", optional = true }
-
-scraper = { version = "0.21.0", features = ["deterministic"], optional = true }
 
 dashmap = "6"
 

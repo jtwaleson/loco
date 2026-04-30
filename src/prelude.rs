@@ -53,5 +53,3 @@ pub use validator::Validate;
 pub mod model {
     pub use crate::model::query;
 }
-#[cfg(feature = "testing")]
-pub use crate::testing::prelude::*;

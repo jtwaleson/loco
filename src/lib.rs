@@ -35,10 +35,6 @@ pub mod mailer;
 pub mod scheduler;
 pub mod task;
 #[cfg(feature = "testing")]
-pub mod testing;
-#[cfg(feature = "testing")]
-pub use axum_test::TestServer;
-#[cfg(feature = "testing")]
 pub mod tests_cfg;
 pub mod validation;
 pub use validator;
