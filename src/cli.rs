@@ -277,11 +277,6 @@ After creating the migration, apply it using your app's migration workflow
         /// Name of the thing to generate
         name: String,
     },
-    /// Generate mailer
-    Mailer {
-        /// Name of the thing to generate
-        name: String,
-    },
     /// Generate data loader
     Data {
         /// Name of the thing to generate
@@ -404,7 +399,6 @@ impl ComponentArg {
             }
             Self::Task { name } => Ok(loco_gen::Component::Task { name }),
             Self::Worker { name } => Ok(loco_gen::Component::Worker { name }),
-            Self::Mailer { name } => Ok(loco_gen::Component::Mailer { name }),
             Self::Data { name } => Ok(loco_gen::Component::Data { name }),
             Self::Deployment { kind } => Ok(kind.to_generator_component(config)),
             Self::Override {

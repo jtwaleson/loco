@@ -7,7 +7,6 @@ pub use axum::{
 };
 pub use axum_extra::extract::cookie;
 pub use chrono::NaiveDateTime as DateTime;
-pub use include_dir::{include_dir, Dir};
 // some types required for controller generators
 #[cfg(feature = "with-db")]
 pub use sea_orm::prelude::{Date, DateTimeUtc, DateTimeWithTimeZone, Decimal, Uuid};
@@ -38,8 +37,6 @@ pub use crate::{
         Json, Routes,
     },
     errors::Error,
-    mailer,
-    mailer::Mailer,
     task::{self, Task, TaskInfo},
     validation::{self, Validatable, ValidatorTrait},
     Result,

@@ -8,7 +8,6 @@ use axum::{
         StatusCode,
     },
 };
-use lettre::{address::AddressError, transport::smtp};
 
 use crate::{controller::ErrorDetail, depcheck, validation::ModelValidationErrors};
 
@@ -68,12 +67,6 @@ pub enum Error {
     #[error(transparent)]
     EnvVar(#[from] std::env::VarError),
 
-    #[error("Error sending email: '{0}'")]
-    EmailSender(#[from] lettre::error::Error),
-
-    #[error("Error sending email (smtp): '{0}'")]
-    Smtp(#[from] smtp::Error),
-
     #[error("Worker error: {0}")]
     Worker(String),
 
@@ -83,9 +76,6 @@ pub enum Error {
     #[cfg(feature = "with-db")]
     #[error(transparent)]
     DB(#[from] sea_orm::DbErr),
-
-    #[error(transparent)]
-    ParseAddress(#[from] AddressError),
 
     #[error("{0}")]
     Hash(String),

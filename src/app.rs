@@ -22,7 +22,6 @@ use crate::{
         AppRoutes,
     },
     environment::Environment,
-    mailer::EmailSender,
     task::Tasks,
     Result,
 };
@@ -259,8 +258,6 @@ pub struct AppContext {
     pub queue_provider: Option<Arc<bgworker::Queue>>,
     /// Configuration settings for the application
     pub config: Config,
-    /// An optional email sender component that can be used to send email.
-    pub mailer: Option<EmailSender>,
     /// Shared store for arbitrary application data
     pub shared_store: Arc<SharedStore>,
 }

@@ -13,12 +13,10 @@ use crate::{
     app::{AppContext, Hooks, Initializer},
     banner::print_banner,
     bgworker,
-    config::{self, Config, WorkerMode},
+    config::{Config, WorkerMode},
     controller::ListRoutes,
     environment::Environment,
     errors::Error,
-    mailer::{EmailSender, MailerWorker},
-    prelude::BackgroundWorker,
     task::{self, Tasks},
     Result,
 };
@@ -194,12 +192,6 @@ pub async fn create_context<H: Hooks>(
     #[cfg(feature = "with-db")]
     let db = db::connect(&config.database).await?;
 
-    let mailer = if let Some(cfg) = config.mailer.as_ref() {
-        create_mailer(cfg)?
-    } else {
-        None
-    };
-
     let queue_provider = bgworker::create_queue_provider(&config).await?;
     let ctx = AppContext {
         environment: environment.clone(),
@@ -207,7 +199,6 @@ pub async fn create_context<H: Hooks>(
         db,
         queue_provider,
         config,
-        mailer,
         shared_store: Arc::new(crate::app::SharedStore::default()),
     };
 
@@ -315,7 +306,6 @@ async fn setup_routes<H: Hooks>(
 async fn register_workers<H: Hooks>(app_context: &AppContext) -> Result<()> {
     if app_context.config.workers.mode == WorkerMode::BackgroundQueue {
         if let Some(queue) = &app_context.queue_provider {
-            queue.register(MailerWorker::build(app_context)).await?;
             H::connect_workers(app_context, queue).await?;
         } else {
             return Err(Error::QueueProviderMissing);
@@ -377,18 +367,4 @@ pub fn list_middlewares<H: Hooks>(ctx: &AppContext) -> Vec<MiddlewareInfo> {
             detail: m.config().unwrap_or_default().to_string(),
         })
         .collect::<Vec<_>>()
-}
-
-/// Initializes an [`EmailSender`] based on the mailer configuration settings
-/// ([`config::Mailer`]).
-fn create_mailer(config: &config::Mailer) -> Result<Option<EmailSender>> {
-    if config.stub {
-        return Ok(Some(EmailSender::stub()));
-    }
-    if let Some(smtp) = config.smtp.as_ref() {
-        if smtp.enable {
-            return Ok(Some(EmailSender::smtp(smtp)?));
-        }
-    }
-    Ok(None)
 }

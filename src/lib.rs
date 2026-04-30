@@ -29,7 +29,6 @@ pub mod environment;
 pub mod errors;
 pub mod hash;
 pub mod logger;
-pub mod mailer;
 pub mod task;
 pub mod validation;
 pub use validator;

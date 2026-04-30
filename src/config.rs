@@ -53,7 +53,6 @@ pub struct Config {
     pub auth: Option<Auth>,
     #[serde(default)]
     pub workers: Workers,
-    pub mailer: Option<Mailer>,
     pub initializers: Option<Initializers>,
 
     /// Custom app settings
@@ -406,26 +405,6 @@ pub enum WorkerMode {
     BackgroundAsync,
 }
 
-/// Mailer configuration
-///
-/// Example (development), to capture mails with something like [mailcrab](https://github.com/tweedegolf/mailcrab):
-/// ```yaml
-/// # config/development.yaml
-/// mailer:
-///   smtp:
-///     enable: true
-///     host: localhost
-///     port: 1025
-///     secure: false
-/// ```
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Mailer {
-    pub smtp: Option<SmtpMailer>,
-
-    #[serde(default)]
-    pub stub: bool,
-}
-
 /// Initializers configuration
 ///
 /// Example (development): To configure settings for oauth2 or custom view
@@ -439,31 +418,6 @@ pub struct Mailer {
 ///       Replace 'google' with your provider's name if different, must be
 ///       unique within the oauth2 config. ... # other fields
 pub type Initializers = BTreeMap<String, serde_json::Value>;
-
-/// SMTP mailer configuration structure.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct SmtpMailer {
-    pub enable: bool,
-    /// SMTP host. for example: localhost, smtp.gmail.com etc.
-    pub host: String,
-    /// SMTP port/
-    pub port: u16,
-    /// Enable TLS
-    pub secure: bool,
-    /// Auth SMTP server
-    pub auth: Option<MailerAuth>,
-    /// Optional EHLO client ID instead of hostname
-    pub hello_name: Option<String>,
-}
-
-/// Authentication details for the mailer
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct MailerAuth {
-    /// User
-    pub user: String,
-    /// Password
-    pub password: String,
-}
 
 impl Config {
     /// Creates a new configuration instance based on the specified environment.
