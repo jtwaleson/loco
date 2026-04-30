@@ -96,7 +96,6 @@ validator = { version = "0.20.0", features = ["derive"] }
 futures-util = "0.3"
 tower = { workspace = true }
 bytes = "1.1"
-ipnetwork = "0.20.0"
 semver = "1"
 
 chrono = { workspace = true }
@@ -132,12 +131,8 @@ tower = "0.4"
 tower-http = { version = "0.6.8", features = [
     "trace",
     "catch-panic",
-    "timeout",
     "add-extension",
-    "cors",
     "fs",
-    "set-header",
-    "compression-full",
 ] }
 heck = "0.4.0"
 

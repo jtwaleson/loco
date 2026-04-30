@@ -240,11 +240,11 @@ impl Routes {
     /// ```rust
     /// use loco_rs::prelude::*;
     /// use tower::{Layer, Service};
-    /// use tower_http::timeout::TimeoutLayer;
+    /// use tower_http::trace::TraceLayer;
     /// async fn ping() -> Result<Response> {
     ///     format::json("Ok")
     /// }
-    /// Routes::new().prefix("status").add("/_ping", get(ping)).layer(TimeoutLayer::new(std::time::Duration::from_secs(5)));
+    /// Routes::new().prefix("status").add("/_ping", get(ping)).layer(TraceLayer::new_for_http());
     /// ```
     #[allow(clippy::needless_pass_by_value)]
     #[must_use]

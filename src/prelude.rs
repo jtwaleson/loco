@@ -23,6 +23,7 @@ pub use serde_json::json as data;
 #[cfg(feature = "auth_jwt")]
 pub use crate::controller::extractor::auth;
 pub use crate::controller::extractor::{
+    respond_to::{Format, RespondTo},
     shared_store::SharedStore,
     validate::{JsonValidate, JsonValidateWithMessage},
 };
@@ -33,10 +34,6 @@ pub use crate::{
     bgworker::{BackgroundWorker, Queue},
     controller::{
         bad_request, format,
-        middleware::{
-            format::{Format, RespondTo},
-            remote_ip::RemoteIP,
-        },
         not_found, unauthorized,
         views::{engines::TeraView, ViewEngine, ViewRenderer},
         Json, Routes,

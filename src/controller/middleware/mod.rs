@@ -2,24 +2,15 @@
 //!
 //! This module defines the various middleware components that Loco provides.
 //! Each middleware is responsible for handling different aspects of request
-//! processing, such as authentication, logging, CORS, compression, and error
-//! handling. The middleware can be easily configured and applied to the
-//! application's router.
+//! processing such as logging, static files, and error handling. The
+//! middleware can be easily configured and applied to the application's router.
 
 pub mod catch_panic;
-pub mod compression;
-pub mod cors;
 pub mod etag;
-pub mod fallback;
-pub mod format;
 pub mod limit_payload;
 pub mod logger;
-pub mod powered_by;
-pub mod remote_ip;
 pub mod request_id;
-pub mod secure_headers;
 pub mod static_assets;
-pub mod timeout;
 
 use axum::Router as AXRouter;
 use serde::{Deserialize, Serialize};
@@ -110,17 +101,12 @@ pub fn default_middleware_stack(ctx: &AppContext) -> Vec<Box<dyn MiddlewareLayer
                 .clone()
                 .unwrap_or_else(|| request_id::RequestId { enable: true }),
         ),
-        // Powered by middleware with a default identifier
-        Box::new(powered_by::new(ctx.config.server.ident.as_deref())),
     ]
 }
 
 /// Server middleware configuration structure.
 #[derive(Default, Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
-    /// Compression for the response.
-    pub compression: Option<compression::Compression>,
-
     /// Etag cache headers.
     pub etag: Option<etag::Etag>,
 
@@ -133,24 +119,9 @@ pub struct Config {
     /// Catch any code panic and log the error.
     pub catch_panic: Option<catch_panic::CatchPanic>,
 
-    /// Setting a global timeout for requests
-    pub timeout_request: Option<timeout::TimeOut>,
-
-    /// CORS configuration
-    pub cors: Option<cors::Cors>,
-
     /// Serving static assets
     #[serde(rename = "static")]
     pub static_assets: Option<static_assets::StaticAssets>,
-
-    /// Sets a set of secure headers
-    pub secure_headers: Option<secure_headers::SecureHeader>,
-
-    /// Calculates a remote IP based on `X-Forwarded-For` when behind a proxy
-    pub remote_ip: Option<remote_ip::RemoteIpMiddleware>,
-
-    /// Configure fallback behavior when hitting a missing URL
-    pub fallback: Option<fallback::Fallback>,
 
     /// Request ID
     pub request_id: Option<request_id::RequestId>,

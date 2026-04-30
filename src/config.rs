@@ -353,13 +353,6 @@ pub enum JWTLocationConfig {
 ///       enable: true
 ///     catch_panic:
 ///       enable: true
-///     timeout_request:
-///       enable: true
-///       timeout: 5000
-///     compression:
-///       enable: true
-///     cors:
-///       enable: true
 /// ```
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Server {
@@ -371,8 +364,6 @@ pub struct Server {
     pub port: i32,
     /// The webserver host
     pub host: String,
-    /// Identify via the `Server` header
-    pub ident: Option<String>,
     /// Middleware configurations for the server, including payload limits,
     /// logging, and error handling.
     #[serde(default)]

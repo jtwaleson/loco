@@ -21,7 +21,6 @@ pub fn test_config() -> Config {
             binding: "localhost".to_string(),
             port: 5555,
             host: "localhost".to_string(),
-            ident: None,
             middlewares: middleware::Config::default(),
         },
         #[cfg(feature = "with-db")]
