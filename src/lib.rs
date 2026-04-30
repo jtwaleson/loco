@@ -7,7 +7,6 @@ pub use self::errors::Error;
 mod banner;
 pub mod bgworker;
 mod depcheck;
-pub mod initializers;
 pub mod prelude;
 
 pub mod data;
@@ -31,7 +30,6 @@ pub mod errors;
 pub mod hash;
 pub mod logger;
 pub mod mailer;
-pub mod scheduler;
 pub mod task;
 #[cfg(feature = "testing")]
 pub mod tests_cfg;

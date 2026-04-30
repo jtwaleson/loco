@@ -16,7 +16,7 @@ use sea_orm::{
     DatabaseConnection, DbBackend, DbConn, DbErr, EntityTrait, IntoActiveModel, Statement,
 };
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashSet},
     fs,
     fs::File,
     io::Write,
@@ -38,41 +38,6 @@ fn re_extract_db_name() -> &'static Regex {
     EXTRACT_DB_NAME.get_or_init(|| {
         Regex::new(r"^.+://(?:.*?/)?([^/?#]+)(?:[?#]|$)").expect("Extract db regex is correct")
     })
-}
-
-#[derive(Default, Clone, Debug)]
-pub struct MultiDb {
-    pub db: HashMap<String, DatabaseConnection>,
-}
-
-impl MultiDb {
-    /// Creating multiple DB connection from the given hashmap
-    ///
-    /// # Errors
-    ///
-    /// When could not create database connection
-    pub async fn new(dbs_config: HashMap<String, config::Database>) -> AppResult<Self> {
-        let mut multi_db = Self::default();
-
-        for (db_name, db_config) in dbs_config {
-            multi_db.db.insert(db_name, connect(&db_config).await?);
-        }
-
-        Ok(multi_db)
-    }
-
-    /// Retrieves a database connection instance based on the specified key
-    /// name.
-    ///
-    /// # Errors
-    ///
-    /// Returns an [`AppResult`] indicating an error if the specified key does
-    /// not correspond to a database connection in the current context.
-    pub fn get(&self, name: &str) -> AppResult<&DatabaseConnection> {
-        self.db
-            .get(name)
-            .map_or_else(|| Err(Error::Message("db not found".to_owned())), Ok)
-    }
 }
 
 /// Verifies a user has access to data within its database

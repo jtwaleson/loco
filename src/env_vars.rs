@@ -11,8 +11,6 @@ pub const RAILS_ENV: &str = "RAILS_ENV";
 pub const NODE_ENV: &str = "NODE_ENV";
 // The key for the application environment configuration
 pub const CONFIG_FOLDER: &str = "LOCO_CONFIG_FOLDER";
-// The key for the scheduler configuration
-pub const SCHEDULER_CONFIG: &str = "SCHEDULER_CONFIG";
 /// The key for the data folder path
 pub const LOCO_DATA_FOLDER_ENV: &str = "LOCO_DATA";
 

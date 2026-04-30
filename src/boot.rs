@@ -1,11 +1,7 @@
 //! # Application Bootstrapping and Logic
 //! This module contains functions and structures for bootstrapping and running
 //! your application.
-use std::{
-    env,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::sync::Arc;
 
 use axum::Router;
 use tokio::{select, signal, task::JoinHandle};
@@ -19,12 +15,10 @@ use crate::{
     bgworker,
     config::{self, Config, WorkerMode},
     controller::ListRoutes,
-    env_vars,
     environment::Environment,
     errors::Error,
     mailer::{EmailSender, MailerWorker},
     prelude::BackgroundWorker,
-    scheduler::{self, Scheduler},
     task::{self, Tasks},
     Result,
 };
@@ -43,8 +37,6 @@ pub enum StartMode {
         /// If empty, the worker handles all jobs.
         tags: Vec<String>,
     },
-    /// Run the app with all available components in the same process.
-    All,
 }
 
 pub struct BootResult {
@@ -54,8 +46,6 @@ pub struct BootResult {
     pub router: Option<Router>,
     /// worker processor
     pub worker: Option<Vec<String>>,
-    /// scheduler processor
-    pub run_scheduler: bool,
 }
 
 /// Configuration structure for serving an application.
@@ -82,15 +72,6 @@ pub async fn start<H: Hooks>(
     server_config: ServeParams,
     no_banner: bool,
 ) -> Result<()> {
-    if boot.run_scheduler {
-        let scheduler = scheduler::<H>(&boot.app_context, None, None, None)?;
-        tokio::spawn(async move {
-            if let Err(err) = scheduler.run().await {
-                error!(err = err.to_string(), "error while running scheduler");
-            }
-        });
-    }
-
     if !no_banner {
         print_banner(&boot, &server_config);
     }
@@ -98,7 +79,6 @@ pub async fn start<H: Hooks>(
     let BootResult {
         router,
         worker,
-        run_scheduler: _,
         app_context,
     } = boot;
 
@@ -193,66 +173,6 @@ pub async fn run_task<H: Hooks>(
         }
     }
     Ok(())
-}
-
-/// Initializes a new scheduler instance based on the provided configuration and context.
-fn scheduler<H: Hooks>(
-    app_context: &AppContext,
-    config: Option<&PathBuf>,
-    name: Option<String>,
-    tag: Option<String>,
-) -> Result<Scheduler> {
-    let env_config_path = env::var(env_vars::SCHEDULER_CONFIG).ok();
-
-    let config_path: Option<&Path> = config.map_or_else(
-        || env_config_path.as_deref().map(Path::new),
-        |path| Some(path.as_path()),
-    );
-
-    let scheduler = match config_path {
-        Some(path) => Scheduler::from_config::<H>(path, &app_context.environment)?,
-        None => {
-            if let Some(config) = &app_context.config.scheduler {
-                Scheduler::new::<H>(config, &app_context.environment)?
-            } else {
-                return Err(Error::Scheduler(scheduler::Error::Empty));
-            }
-        }
-    };
-
-    Ok(scheduler.by_spec(&scheduler::Spec { name, tag }))
-}
-
-/// Runs the scheduler with the given configuration and context. in case if list
-/// args is true prints scheduler job configuration
-///
-/// This function initializes the scheduler, registers tasks through the
-/// provided [`Hooks`], and executes the scheduler based on the specified
-/// configuration or context. The scheduler continuously runs, managing and
-/// executing scheduled tasks until a signal is received to shut down.
-/// Upon receiving this signal, the function gracefully shuts down all running
-/// tasks and exits safely.
-///
-/// # Errors
-///
-/// When running could not run the scheduler.
-pub async fn run_scheduler<H: Hooks>(
-    app_context: &AppContext,
-    config: Option<&PathBuf>,
-    name: Option<String>,
-    tag: Option<String>,
-    list: bool,
-) -> Result<()> {
-    let task_span = tracing::span!(tracing::Level::DEBUG, "scheduler_jobs");
-    let _guard = task_span.enter();
-
-    let scheduler = scheduler::<H>(app_context, config, name, tag)?;
-    if list {
-        println!("{scheduler}");
-        Ok(())
-    } else {
-        Ok(scheduler.run().await?)
-    }
 }
 
 /// Initializes the application context by loading configuration and
@@ -354,7 +274,6 @@ pub async fn run_app<H: Hooks>(mode: &StartMode, app_context: AppContext) -> Res
                 app_context,
                 router: Some(router),
                 worker: None,
-                run_scheduler: false,
             })
         }
         StartMode::ServerAndWorker => {
@@ -364,17 +283,6 @@ pub async fn run_app<H: Hooks>(mode: &StartMode, app_context: AppContext) -> Res
                 app_context,
                 router: Some(router),
                 worker: Some(vec![]),
-                run_scheduler: false,
-            })
-        }
-        StartMode::All => {
-            register_workers::<H>(&app_context).await?;
-            let router = setup_routes::<H>(&app_context, &initializers).await?;
-            Ok(BootResult {
-                app_context,
-                router: Some(router),
-                worker: Some(vec![]),
-                run_scheduler: true,
             })
         }
         StartMode::WorkerOnly { tags } => {
@@ -383,7 +291,6 @@ pub async fn run_app<H: Hooks>(mode: &StartMode, app_context: AppContext) -> Res
                 app_context,
                 router: None,
                 worker: Some(tags.clone()),
-                run_scheduler: false,
             })
         }
     }

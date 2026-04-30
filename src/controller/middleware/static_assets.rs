@@ -15,6 +15,9 @@
 //! if either is missing, it returns an error. If the files exist, the
 //! middleware is added to the router to serve static files.
 
+/// Default app asset root (CSS, JS, static HTML, etc.).
+pub const DEFAULT_ASSET_FOLDER: &str = "assets";
+
 use std::path::PathBuf;
 
 use axum::{

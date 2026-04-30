@@ -32,7 +32,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::info;
 
-use crate::{controller::middleware, environment::Environment, logger, scheduler, Error, Result};
+use crate::{controller::middleware, environment::Environment, logger, Error, Result};
 
 static DEFAULT_FOLDER: OnceLock<PathBuf> = OnceLock::new();
 
@@ -69,8 +69,6 @@ pub struct Config {
     /// accessing `ctx.config.settings`.
     #[serde(default)]
     pub settings: Option<serde_json::Value>,
-
-    pub scheduler: Option<scheduler::Config>,
 }
 
 /// Logger configuration

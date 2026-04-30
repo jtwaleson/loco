@@ -33,10 +33,7 @@ use serde::Serialize;
 use serde_json::json;
 
 use crate::{
-    controller::{
-        views::{self, ViewRenderer},
-        Json,
-    },
+    controller::Json,
     Result,
 };
 
@@ -183,32 +180,6 @@ pub fn redirect(to: &str) -> Result<Response> {
     Ok(Redirect::to(to).into_response())
 }
 
-/// Render template located by `key`
-///
-/// # Errors
-///
-/// This function will return an error if rendering fails
-pub fn view<V, S>(v: &V, key: &str, data: S) -> Result<Response>
-where
-    V: ViewRenderer,
-    S: Serialize,
-{
-    let res = v.render(key, data)?;
-    html(&res)
-}
-
-/// Render template from string
-///
-/// # Errors
-///
-/// This function will return an error if rendering fails
-pub fn template<S>(template: &str, data: S) -> Result<Response>
-where
-    S: Serialize,
-{
-    html(&views::template(template, data)?)
-}
-
 #[derive(Debug)]
 pub struct RenderBuilder {
     response: Builder,
@@ -303,32 +274,6 @@ impl RenderBuilder {
     /// This function will return an error if IO fails
     pub fn empty(self) -> Result<Response> {
         Ok(self.response.body(Body::empty())?)
-    }
-
-    /// Render template located by `key`
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if rendering fails
-    pub fn view<V, S>(self, v: &V, key: &str, data: S) -> Result<Response>
-    where
-        V: ViewRenderer,
-        S: Serialize,
-    {
-        let content = v.render(key, data)?;
-        self.html(&content)
-    }
-
-    /// Render template located by `key`
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if rendering fails
-    pub fn template<S>(self, template: &str, data: S) -> Result<Response>
-    where
-        S: Serialize,
-    {
-        html(&views::template(template, data)?)
     }
 
     /// Finalize and return a HTML response
@@ -493,30 +438,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn view_response() {
-        let tree_fs = tree_fs::TreeBuilder::default()
-            .add_file("template/test.html", "- {{foo}}")
-            .create()
-            .unwrap();
-
-        let v = TeraView::from_custom_dir(&tree_fs.root, |_| Ok(())).unwrap();
-
-        assert_debug_snapshot!(view(&v, "template/none.html", serde_json::json!({})));
-        let response = view(&v, "template/test.html", serde_json::json!({"foo": "loco"})).unwrap();
-
-        assert_debug_snapshot!(response);
-        assert_eq!(&response_body_to_string(response).await, "- loco");
-    }
-
-    #[tokio::test]
-    async fn template_response() {
-        let response = template("- {{foo}}", serde_json::json!({"foo": "loco"})).unwrap();
-
-        assert_debug_snapshot!(response);
-        assert_eq!(&response_body_to_string(response).await, "- loco");
-    }
-
-    #[tokio::test]
     async fn builder_set_status_code_response() {
         assert_eq!(render().empty().unwrap().status(), 200);
         assert_eq!(render().status(202).empty().unwrap().status(), 202);
@@ -582,34 +503,6 @@ mod tests {
 
         assert_debug_snapshot!(response);
         assert_eq!(response_body_to_string(response).await, String::new());
-    }
-
-    #[tokio::test]
-    async fn builder_view_response() {
-        let tree_fs = tree_fs::TreeBuilder::default()
-            .add_file("template/test.html", "- {{foo}}")
-            .create()
-            .unwrap();
-
-        let v = TeraView::from_custom_dir(&tree_fs.root, |_| Ok(())).unwrap();
-
-        assert_debug_snapshot!(view(&v, "template/none.html", serde_json::json!({})));
-        let response = render()
-            .view(&v, "template/test.html", serde_json::json!({"foo": "loco"}))
-            .unwrap();
-
-        assert_debug_snapshot!(response);
-        assert_eq!(&response_body_to_string(response).await, "- loco");
-    }
-
-    #[tokio::test]
-    async fn builder_template_response() {
-        let response = render()
-            .template("- {{foo}}", serde_json::json!({"foo": "loco"}))
-            .unwrap();
-
-        assert_debug_snapshot!(response);
-        assert_eq!(&response_body_to_string(response).await, "- loco");
     }
 
     #[tokio::test]

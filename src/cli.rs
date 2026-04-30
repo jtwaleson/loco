@@ -13,7 +13,7 @@
 //!     cli::main::<App>().await
 //! }
 //! ```
-use clap::{ArgAction, ArgGroup, Parser, Subcommand, ValueHint};
+use clap::{ArgAction, ArgGroup, Parser, Subcommand};
 use colored::Colorize;
 use std::fmt::Write;
 use std::process::exit;
@@ -26,8 +26,8 @@ use crate::controller;
 use crate::{
     app::{AppContext, Hooks},
     boot::{
-        create_app, create_context, list_endpoints, list_middlewares, run_scheduler, run_task,
-        start, ServeParams, StartMode,
+        create_app, create_context, list_endpoints, list_middlewares, run_task, start, ServeParams,
+        StartMode,
     },
     config::Config,
     environment::{resolve_from_env, Environment, DEFAULT_ENVIRONMENT},
@@ -58,18 +58,15 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Start an app
-    #[command(group(ArgGroup::new("start_mode").args(&["worker", "server_and_worker", "all"])))]
+    #[command(group(ArgGroup::new("start_mode").args(&["worker", "server_and_worker"])))]
     #[clap(alias("s"))]
     Start {
         /// Start worker. Optionally provide tags to run specific jobs (e.g. --worker=tag1,tag2)
-        #[arg(short, long, action, value_delimiter = ',', num_args = 0.., conflicts_with_all = &["server_and_worker", "all"])]
+        #[arg(short, long, action, value_delimiter = ',', num_args = 0.., conflicts_with_all = &["server_and_worker"])]
         worker: Option<Vec<String>>,
         /// Start the server and worker in the same process
-        #[arg(short, long, action, conflicts_with_all = &["worker", "all"])]
+        #[arg(short, long, action, conflicts_with_all = &["worker"])]
         server_and_worker: bool,
-        /// Start the server, worker, and scheduler in the same process
-        #[arg(short, long, action, conflicts_with_all = &["worker", "server_and_worker"])]
-        all: bool,
         /// server bind address
         #[arg(short, long, action)]
         binding: Option<String>,
@@ -102,23 +99,6 @@ enum Commands {
     Jobs {
         #[command(subcommand)]
         command: JobsCommands,
-    },
-    /// Run the scheduler
-    Scheduler {
-        /// Run a specific job by its name.
-        #[arg(short, long, action)]
-        name: Option<String>,
-        /// Run jobs that are associated with a specific tag.
-        #[arg(short, long, action)]
-        tag: Option<String>,
-        /// Specify a path to a dedicated scheduler configuration file. by
-        /// default load schedulers job setting from environment config.
-        #[clap(value_parser)]
-        #[arg(short = 'c', long = "config", action, value_hint = ValueHint::FilePath)]
-        config_path: Option<PathBuf>,
-        /// Show all configured jobs
-        #[arg(short, long, action)]
-        list: bool,
     },
     /// code generation creates a set of files and code templates based on a
     /// predefined set of rules.
@@ -292,8 +272,6 @@ After creating the migration, apply it using your app's migration workflow
         /// Name of the thing to generate
         name: String,
     },
-    /// Generate a scheduler jobs configuration template
-    Scheduler {},
     /// Generate worker
     Worker {
         /// Name of the thing to generate
@@ -425,7 +403,6 @@ impl ComponentArg {
                 })
             }
             Self::Task { name } => Ok(loco_gen::Component::Task { name }),
-            Self::Scheduler {} => Ok(loco_gen::Component::Scheduler {}),
             Self::Worker { name } => Ok(loco_gen::Component::Worker { name }),
             Self::Mailer { name } => Ok(loco_gen::Component::Mailer { name }),
             Self::Data { name } => Ok(loco_gen::Component::Data { name }),
@@ -455,7 +432,7 @@ impl DeploymentKind {
 
                 if let Some(static_assets) = &config.server.middlewares.static_assets {
                     let asset_folder =
-                        PathBuf::from(controller::views::engines::DEFAULT_ASSET_FOLDER);
+                        PathBuf::from(controller::middleware::static_assets::DEFAULT_ASSET_FOLDER);
                     if asset_folder.exists() {
                         copy_paths.push(asset_folder.clone());
                     }
@@ -614,7 +591,6 @@ pub async fn main<H: Hooks>() -> crate::Result<()> {
         Commands::Start {
             worker,
             server_and_worker,
-            all,
             binding,
             port,
             no_banner,
@@ -622,8 +598,6 @@ pub async fn main<H: Hooks>() -> crate::Result<()> {
             let start_mode = worker.map_or(
                 if server_and_worker {
                     StartMode::ServerAndWorker
-                } else if all {
-                    StartMode::All
                 } else {
                     StartMode::ServerOnly
                 },
@@ -670,15 +644,6 @@ pub async fn main<H: Hooks>() -> crate::Result<()> {
             let app_context = create_context::<H>(&environment, app_context.config).await?;
             run_task::<H>(&app_context, name.as_ref(), &vars).await?;
         }
-        Commands::Scheduler {
-            name,
-            config_path,
-            tag,
-            list,
-        } => {
-            let app_context = create_context::<H>(&environment, app_context.config).await?;
-            run_scheduler::<H>(&app_context, config_path.as_ref(), name, tag, list).await?;
-        }
         #[cfg(debug_assertions)]
         Commands::Generate { component } => {
             handle_generate_command::<H>(component, &app_context.config)?;
@@ -709,7 +674,6 @@ pub async fn main<H: Hooks>() -> crate::Result<()> {
         Commands::Start {
             worker,
             server_and_worker,
-            all,
             binding,
             port,
             no_banner,
@@ -717,8 +681,6 @@ pub async fn main<H: Hooks>() -> crate::Result<()> {
             let start_mode = worker.map_or(
                 if server_and_worker {
                     StartMode::ServerAndWorker
-                } else if all {
-                    StartMode::All
                 } else {
                     StartMode::ServerOnly
                 },
@@ -761,14 +723,6 @@ pub async fn main<H: Hooks>() -> crate::Result<()> {
         #[cfg(feature = "bg_pg")]
         Commands::Jobs { command } => {
             handle_job_command::<H>(command, &environment, app_context.config).await?
-        }
-        Commands::Scheduler {
-            name,
-            config_path,
-            tag,
-            list,
-        } => {
-            run_scheduler::<H>(&app_context, config_path.as_ref(), name, tag, list).await?;
         }
         #[cfg(debug_assertions)]
         Commands::Generate { component } => {

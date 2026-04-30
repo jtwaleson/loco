@@ -17,7 +17,7 @@ pub use sea_orm::{
     DatabaseConnection, DbErr, EntityTrait, IntoActiveModel, ModelTrait, QueryFilter, Set,
     TransactionTrait,
 };
-// sugar for controller views to use `data!({"item": ..})` instead of `json!`
+// sugar for controllers to use `data!({"item": ..})` instead of `json!`
 pub use serde_json::json as data;
 
 #[cfg(feature = "auth_jwt")]
@@ -35,7 +35,6 @@ pub use crate::{
     controller::{
         bad_request, format,
         not_found, unauthorized,
-        views::{engines::TeraView, ViewEngine, ViewRenderer},
         Json, Routes,
     },
     errors::Error,
