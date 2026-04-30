@@ -36,8 +36,6 @@ with-db = [
 bg_pg = ["dep:sqlx", "dep:ulid"]
 ## Testing feature flags
 integration_test = []
-# Embed assets into binary
-embedded_assets = []
 
 [dependencies]
 loco-gen = { version = "0.16.1" }

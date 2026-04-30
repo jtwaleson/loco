@@ -492,7 +492,6 @@ mod tests {
         assert_eq!(response_body_to_string(response).await, String::new());
     }
 
-    #[cfg(not(feature = "embedded_assets"))]
     #[tokio::test]
     async fn view_response() {
         let tree_fs = tree_fs::TreeBuilder::default()
@@ -585,7 +584,6 @@ mod tests {
         assert_eq!(response_body_to_string(response).await, String::new());
     }
 
-    #[cfg(not(feature = "embedded_assets"))]
     #[tokio::test]
     async fn builder_view_response() {
         let tree_fs = tree_fs::TreeBuilder::default()
