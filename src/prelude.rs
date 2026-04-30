@@ -27,7 +27,7 @@ pub use crate::controller::extractor::{
     validate::{JsonValidate, JsonValidateWithMessage},
 };
 #[cfg(feature = "with-db")]
-pub use crate::model::{query, Authenticable, ModelError, ModelResult};
+pub use crate::model::{Authenticable, ModelError, ModelResult};
 pub use crate::{
     app::{AppContext, Initializer},
     bgworker::{BackgroundWorker, Queue},
@@ -49,7 +49,3 @@ pub use crate::{
     Result,
 };
 pub use validator::Validate;
-#[cfg(feature = "with-db")]
-pub mod model {
-    pub use crate::model::query;
-}
