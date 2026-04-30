@@ -3,9 +3,6 @@
 //! fetching environment variables, ensuring that keys are easily accessible
 //! from a single location in the codebase.
 
-#[cfg(feature = "with-db")]
-/// The key for `PostgreSQL` database options environment variable.
-pub const POSTGRES_DB_OPTIONS: &str = "LOCO_POSTGRES_DB_OPTIONS";
 /// The key for the application's environment (e.g., development, production).
 pub const LOCO_ENV: &str = "LOCO_ENV";
 /// The key for the application's environment (e.g., development, production).

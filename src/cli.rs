@@ -13,9 +13,6 @@
 //!     cli::main::<App>().await
 //! }
 //! ```
-#[cfg(feature = "with-db")]
-use {crate::boot::run_db, crate::db};
-
 use clap::{ArgAction, ArgGroup, Parser, Subcommand, ValueHint};
 use colored::Colorize;
 use std::fmt::Write;
@@ -30,7 +27,7 @@ use crate::{
     app::{AppContext, Hooks},
     boot::{
         create_app, create_context, list_endpoints, list_middlewares, run_scheduler, run_task,
-        start, RunDbCommand, ServeParams, StartMode,
+        start, ServeParams, StartMode,
     },
     config::Config,
     environment::{resolve_from_env, Environment, DEFAULT_ENVIRONMENT},
@@ -82,12 +79,6 @@ enum Commands {
         /// disable the banner display
         #[arg(short, long, action = ArgAction::SetTrue)]
         no_banner: bool,
-    },
-    #[cfg(feature = "with-db")]
-    /// Perform DB operations
-    Db {
-        #[command(subcommand)]
-        command: DbCommands,
     },
     /// Describe all application endpoints
     Routes {},
@@ -213,11 +204,8 @@ enum ComponentArg {
       $ cargo loco g migration CreateJoinTableUsersAndGroups count:int --without-tz
       # Creates a join table without timestamp columns
 
-After running the migration, follow these steps to complete the process:
-  - Apply the migration:
-    $ cargo loco db migrate
-  - Generate the model entities:
-    $ cargo loco db entities
+After creating the migration, apply it using your app's migration workflow
+(for example `sea-orm-cli migrate up` or your project's migration task).
 ", "Examples:".bold().underline()))]
     Migration {
         /// Name of the migration to generate
@@ -452,77 +440,6 @@ impl ComponentArg {
     }
 }
 
-#[derive(Subcommand)]
-enum DbCommands {
-    /// Create schema
-    Create,
-    /// Migrate schema (up)
-    Migrate,
-    /// Run one down migration, or add a number to run multiple down migrations
-    /// (i.e. `down 2`)
-    Down {
-        /// The number of migrations to rollback
-        #[arg(default_value_t = 1)]
-        steps: u32,
-    },
-    /// Drop all tables, then reapply all migrations
-    Reset,
-    /// Migration status
-    Status,
-    /// Generate entity .rs files from database schema
-    #[cfg(debug_assertions)]
-    Entities,
-    /// Truncate data in tables (without dropping)
-    Truncate,
-    /// Seed your database with initial data or dump tables to files.
-    Seed {
-        /// Clears all data in the database before seeding.
-        #[arg(short, long)]
-        reset: bool,
-        /// Dumps all database tables to files.
-        #[arg(short, long)]
-        dump: bool,
-        /// Specifies specific tables to dump.
-        #[arg(long, value_delimiter = ',')]
-        dump_tables: Option<Vec<String>>,
-        /// Specifies the folder containing seed files (defaults to
-        /// 'src/fixtures').
-        #[arg(long, default_value = "src/fixtures")]
-        from: PathBuf,
-    },
-    /// Dump database schema
-    Schema,
-}
-
-impl From<DbCommands> for RunDbCommand {
-    fn from(value: DbCommands) -> Self {
-        match value {
-            DbCommands::Migrate => Self::Migrate,
-            DbCommands::Down { steps } => Self::Down(steps),
-            DbCommands::Reset => Self::Reset,
-            DbCommands::Status => Self::Status,
-            #[cfg(debug_assertions)]
-            DbCommands::Entities => Self::Entities,
-            DbCommands::Truncate => Self::Truncate,
-            DbCommands::Seed {
-                reset,
-                from,
-                dump,
-                dump_tables,
-            } => Self::Seed {
-                reset,
-                from,
-                dump,
-                dump_tables,
-            },
-            DbCommands::Create => {
-                unreachable!("Create db should't handled in the global db commands")
-            }
-            DbCommands::Schema => Self::Schema,
-        }
-    }
-}
-
 #[derive(clap::ValueEnum, Clone)]
 pub enum DeploymentKind {
     Docker,
@@ -720,14 +637,6 @@ pub async fn main<H: Hooks>() -> crate::Result<()> {
                     .unwrap_or_else(|| boot_result.app_context.config.server.binding.clone()),
             };
             start::<H>(boot_result, serve_params, no_banner).await?;
-        }
-        #[cfg(feature = "with-db")]
-        Commands::Db { command } => {
-            if matches!(command, DbCommands::Create) {
-                db::create(&app_context.config.database.uri).await?;
-            } else {
-                run_db::<H>(&app_context, command.into()).await?;
-            }
         }
         #[cfg(feature = "bg_pg")]
         Commands::Jobs { command } => {

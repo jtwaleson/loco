@@ -6,25 +6,21 @@
 use super::Result as AppResult;
 use crate::{
     app::{AppContext, Hooks},
-    cargo_config::CargoConfig,
-    config, env_vars,
+    config,
     errors::Error,
 };
 use chrono::{DateTime, Utc};
 use regex::Regex;
-use semver::Version;
 use sea_orm::{
     ActiveModelTrait, ConnectOptions, ConnectionTrait, Database, DatabaseBackend,
     DatabaseConnection, DbBackend, DbConn, DbErr, EntityTrait, IntoActiveModel, Statement,
 };
-use std::fmt::Write as FmtWrites;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fs,
     fs::File,
     io::Write,
     path::Path,
-    process::Command,
     sync::OnceLock,
     time::Duration,
 };
@@ -200,28 +196,6 @@ pub fn extract_db_name(conn_str: &str) -> AppResult<&str> {
         .and_then(|cap| cap.get(1).map(|db| db.as_str()))
         .ok_or_else(|| Error::string("could not extract db_name"))
 }
-///  Create a new database. This functionality is currently exclusive to Postgre
-/// databases.
-///
-/// # Errors
-///
-/// Returns a [`sea_orm::DbErr`] if an error occurs during run migration up.
-pub async fn create(db_uri: &str) -> AppResult<()> {
-    if !db_uri.starts_with("postgres://") {
-        return Err(Error::string(
-            "Only Postgres databases are supported for table creation",
-        ));
-    }
-    let db_name = extract_db_name(db_uri).map_err(|_| {
-        Error::string("The specified table name was not found in the given Postgres database URI")
-    })?;
-
-    let conn = db_uri.replace(db_name, "/postgres");
-    let db = Database::connect(conn).await?;
-
-    Ok(create_postgres_database(db_name, &db).await?)
-}
-
 /// Apply migrations to the database using the provided migrator.
 ///
 /// # Errors
@@ -443,293 +417,6 @@ pub async fn reset_autoincrement(
     Ok(())
 }
 
-struct EntityCmd {
-    command: Vec<String>,
-    flags: BTreeMap<String, Option<String>>,
-}
-
-impl EntityCmd {
-    fn new(config: &config::Database) -> Self {
-        Self {
-            command: vec!["generate".to_string(), "entity".to_string()],
-            flags: BTreeMap::from([
-                ("--database-url".to_string(), Some(config.uri.clone())),
-                (
-                    "--ignore-tables".to_string(),
-                    Some(IGNORED_TABLES.join(",")),
-                ),
-                (
-                    "--output-dir".to_string(),
-                    Some("src/models/_entities".to_string()),
-                ),
-                ("--with-serde".to_string(), Some("both".to_string())),
-                ("--with-copy-enums".to_string(), None),
-            ]),
-        }
-    }
-
-    fn merge_with_config(config: &config::Database, toml_config: &toml::Table) -> Self {
-        let mut flags = Self::new(config).flags;
-
-        for (key, value) in toml_config {
-            let flag_key = format!("--{}", key.replace('_', "-"));
-
-            // Handle special cases
-            match flag_key.as_str() {
-                "--output-dir" | "--database-url" => {
-                    tracing::warn!(
-                        "Ignoring {} configuration from Cargo.toml as it cannot be overridden",
-                        key
-                    );
-                    continue;
-                }
-                "--ignore-tables" => {
-                    if let (Some(current_str), Some(new_value)) = (
-                        flags.get_mut(&flag_key).and_then(|c| c.as_mut()),
-                        value.as_str(),
-                    ) {
-                        *current_str = format!("{current_str},{new_value}");
-                    }
-                    continue;
-                }
-                _ => {}
-            }
-
-            // Handle regular flags
-            let flag_value = match value {
-                toml::Value::String(s) => Some(s.clone()),
-                toml::Value::Boolean(true) => None,
-                toml::Value::Boolean(false) => continue,
-                _ => Some(value.to_string()),
-            };
-
-            flags.insert(flag_key, flag_value);
-        }
-
-        Self {
-            command: vec!["generate".to_string(), "entity".to_string()],
-            flags,
-        }
-    }
-
-    fn command(&self) -> Vec<&str> {
-        let mut args: Vec<&str> = self
-            .command
-            .iter()
-            .map(std::string::String::as_str)
-            .collect();
-        for (flag, value) in &self.flags {
-            args.push(flag.as_str());
-            if let Some(val) = value {
-                args.push(val.as_str());
-            }
-        }
-        args
-    }
-}
-
-const MIN_SEAORMCLI_VER: &str = "1.1.0";
-
-fn ensure_seaorm_cli_for_entity_gen() -> AppResult<()> {
-    match Command::new("sea-orm-cli").arg("--version").output() {
-        Ok(out) => {
-            let input = String::from_utf8_lossy(&out.stdout);
-            let re = Regex::new(r"(\d+\.\d+\.\d+)").expect("valid semver regex");
-            let version_str = re
-                .captures(&input)
-                .and_then(|caps| caps.get(0))
-                .map(|m| m.as_str())
-                .ok_or_else(|| {
-                    Error::Message(
-                        "SeaORM CLI version not found\n   To fix, run:\n      $ cargo install sea-orm-cli"
-                            .to_owned(),
-                    )
-                })?;
-            let version =
-                Version::parse(version_str).map_err(|e| Error::Message(e.to_string()))?;
-            let min_version =
-                Version::parse(MIN_SEAORMCLI_VER).expect("MIN_SEAORMCLI_VER is valid semver");
-            if version >= min_version {
-                Ok(())
-            } else {
-                Err(Error::Message(format!(
-                    "SeaORM CLI minimal version is `{min_version}` (you have `{version}`). \
-                     Run `cargo install sea-orm-cli` to update.\n   To fix, run:\n      $ cargo install sea-orm-cli"
-                )))
-            }
-        }
-        Err(_) => Err(Error::Message(
-            "SeaORM CLI was not found\n   To fix, run:\n      $ cargo install sea-orm-cli"
-                .to_owned(),
-        )),
-    }
-}
-
-async fn ensure_db_for_entity_gen(config: &config::Database) -> AppResult<()> {
-    let conn = connect(config)
-        .await
-        .map_err(|e| Error::Message(format!("DB connection: fails {e}")))?;
-    conn.ping()
-        .await
-        .map_err(|e| Error::Message(format!("DB connection: fails {e}")))?;
-    verify_access(&conn)
-        .await
-        .map_err(|e| Error::Message(format!("DB connection: fails {e}")))?;
-    Ok(())
-}
-
-/// Generate entity model.
-/// This function using sea-orm-cli.
-///
-/// # Errors
-///
-/// Returns a [`AppResult`] if an error occurs during generate model entity.
-pub async fn entities(ctx: &AppContext) -> AppResult<String> {
-    ensure_seaorm_cli_for_entity_gen()?;
-    ensure_db_for_entity_gen(&ctx.config.database).await?;
-
-    let flags = CargoConfig::from_current_dir()?
-        .get_db_entities()
-        .map_or_else(
-            || EntityCmd::new(&ctx.config.database),
-            |entity_config| {
-                tracing::info!(
-                    ?entity_config,
-                    "Found db.entity configuration in Cargo.toml"
-                );
-                EntityCmd::merge_with_config(&ctx.config.database, entity_config)
-            },
-        );
-
-    let out = duct::cmd("sea-orm-cli", &flags.command())
-        .stderr_to_stdout()
-        .run()
-        .map_err(|err| {
-            Error::Message(format!(
-                "failed to generate entity using sea-orm-cli binary. error details: `{err}`",
-            ))
-        })?;
-
-    fix_entities()?;
-
-    Ok(String::from_utf8_lossy(&out.stdout).to_string())
-}
-
-// see https://github.com/SeaQL/sea-orm/pull/1947
-// also we are generating an extension module from the get go
-fn fix_entities() -> AppResult<()> {
-    let dir = fs::read_dir("src/models/_entities")?
-        .filter_map(|ent| {
-            let ent = ent.unwrap();
-            if ent.path().is_file()
-                && ent.file_name() != "mod.rs"
-                && ent.file_name() != "prelude.rs"
-            {
-                Some(ent.path())
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>();
-
-    // remove activemodel impl from all generated entities, and make note to
-    // generate a new extension for those who had it
-    let activemodel_exp = "impl ActiveModelBehavior for ActiveModel {}";
-    let mut cleaned_entities = Vec::new();
-    for file in &dir {
-        let content = fs::read_to_string(file)?;
-        if content.contains(activemodel_exp) {
-            let content = content
-                .lines()
-                .filter(|line| !line.contains(activemodel_exp))
-                .collect::<Vec<_>>()
-                .join("\n");
-            fs::write(file, content)?;
-            cleaned_entities.push(file);
-        }
-    }
-
-    // generate an empty extension with impl activemodel behavior
-    let mut models_mod = fs::read_to_string("src/models/mod.rs")?;
-    for entity_file in cleaned_entities {
-        let new_file = Path::new("src/models").join(
-            entity_file
-                .file_name()
-                .ok_or_else(|| Error::string("cannot extract file name"))?,
-        );
-
-        if !new_file.exists() {
-            // Check if the entity has an updated_at field
-            let entity_content = fs::read_to_string(entity_file)?;
-            let has_updated_at = entity_content.contains("pub updated_at: DateTimeWithTimeZone");
-
-            let module = new_file
-                .file_stem()
-                .ok_or_else(|| Error::string("cannot extract file stem"))?
-                .to_str()
-                .ok_or_else(|| Error::string("cannot extract file stem"))?;
-            let module_pascal = heck::AsPascalCase(module);
-
-            // Conditionally generate the ActiveModelBehavior implementation
-            let before_save_impl = if has_updated_at {
-                r"#[async_trait::async_trait]
-impl ActiveModelBehavior for ActiveModel {
-    async fn before_save<C>(self, _db: &C, insert: bool) -> std::result::Result<Self, DbErr>
-    where
-        C: ConnectionTrait,
-    {
-        if !insert && self.updated_at.is_unchanged() {
-            let mut this = self;
-            this.updated_at = sea_orm::ActiveValue::Set(chrono::Utc::now().into());
-            Ok(this)
-        } else {
-            Ok(self)
-        }
-    }
-}"
-            } else {
-                r"#[async_trait::async_trait]
-impl ActiveModelBehavior for ActiveModel {
-    async fn before_save<C>(self, _db: &C, _insert: bool) -> std::result::Result<Self, DbErr>
-    where
-        C: ConnectionTrait,
-    {
-        Ok(self)
-    }
-}"
-            };
-
-            fs::write(
-                &new_file,
-                format!(
-                    r"use sea_orm::entity::prelude::*;
-pub use super::_entities::{module}::{{ActiveModel, Model, Entity}};
-pub type {module_pascal} = Entity;
-
-{before_save_impl}
-
-// implement your read-oriented logic here
-impl Model {{}}
-
-// implement your write-oriented logic here
-impl ActiveModel {{}}
-
-// implement your custom finders, selectors oriented logic here
-impl Entity {{}}
-"
-                ),
-            )?;
-            if !models_mod.contains(&format!("mod {module}")) {
-                let _ = writeln!(models_mod, "pub mod {module};");
-            }
-        }
-    }
-
-    fs::write("src/models/mod.rs", models_mod)?;
-
-    Ok(())
-}
-
 /// Truncate a table in the database, effectively deleting all rows.
 ///
 /// # Errors
@@ -750,44 +437,6 @@ where
 /// when seed process is fails
 pub async fn run_app_seed<H: Hooks>(ctx: &AppContext, path: &Path) -> AppResult<()> {
     H::seed(ctx, path).await
-}
-
-/// Create a Postgres database from the given db name.
-///
-/// To create the database with `LOCO_POSTGRES_DB_OPTIONS`
-async fn create_postgres_database(
-    db_name: &str,
-    db: &DatabaseConnection,
-) -> Result<(), sea_orm::DbErr> {
-    let mut select = sea_orm::sea_query::Query::select();
-    select
-        .expr(sea_orm::sea_query::Expr::val(1))
-        .from(sea_orm::sea_query::Alias::new("pg_database"))
-        .and_where(
-            sea_orm::sea_query::Expr::col(sea_orm::sea_query::Alias::new("datname")).eq(db_name),
-        )
-        .limit(1);
-
-    let (sql, values) = select.build(sea_orm::sea_query::PostgresQueryBuilder);
-    let statement = Statement::from_sql_and_values(DatabaseBackend::Postgres, sql, values);
-
-    if db.query_one(statement).await?.is_some() {
-        tracing::info!(db_name, "database already exists");
-
-        return Err(sea_orm::DbErr::Custom("database already exists".to_owned()));
-    }
-
-    let with_options = env_vars::get_or_default(env_vars::POSTGRES_DB_OPTIONS, "ENCODING='UTF8'");
-
-    let query = format!("CREATE DATABASE {db_name} WITH {with_options}");
-    tracing::info!(query, "creating postgres database");
-
-    db.execute(sea_orm::Statement::from_string(
-        sea_orm::DatabaseBackend::Postgres,
-        query,
-    ))
-    .await?;
-    Ok(())
 }
 
 /// Retrieves a list of table names from the database.
