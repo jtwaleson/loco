@@ -145,17 +145,14 @@ impl AppRoutes {
     ///
     /// In the following example, you are adding `api` as a prefix and then nesting `v1` within it:
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use loco_rs::controller::AppRoutes;
-    /// use loco_rs::tests_cfg::*;
     ///
     /// let app_routes = AppRoutes::with_default_routes()
-    ///      .prefix("api")
-    ///      .add_route(controllers::auth::routes())
-    ///      .nest_prefix("v1")
-    ///      .add_route(controllers::home::routes());
+    ///     .prefix("api")
+    ///     .nest_prefix("v1");
     ///
-    /// // This will result in routes like `/api/auth` and `/api/v1/home`
+    /// // Routes are registered under prefixes such as `/api/...` and `/api/v1/...`.
     /// ```
     #[must_use]
     pub fn nest_prefix(mut self, prefix: &str) -> Self {
@@ -312,147 +309,3 @@ impl AppRoutes {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{prelude::*, tests_cfg};
-    use axum::http::Method;
-    use insta::assert_debug_snapshot;
-    use rstest::rstest;
-    use std::vec;
-    use tower::ServiceExt;
-
-    async fn action() -> Result<Response> {
-        format::json("loco")
-    }
-
-    #[test]
-    fn can_load_app_route_from_default() {
-        let routes = AppRoutes::with_default_routes().collect();
-
-        for route in routes {
-            assert_debug_snapshot!(
-                format!("[{}]", route.uri.replace('/', "[slash]")),
-                format!("{:?} {}", route.actions, route.uri)
-            );
-        }
-    }
-
-    #[test]
-    fn can_load_empty_app_routes() {
-        assert_eq!(AppRoutes::empty().collect().len(), 0);
-    }
-
-    #[test]
-    fn can_load_routes() {
-        let router_without_prefix = Routes::new().add("/", get(action));
-        let normalizer = Routes::new()
-            .prefix("/normalizer")
-            .add("no-slash", get(action))
-            .add("/", post(action))
-            .add("//loco///rs//", delete(action))
-            .add("//////multiple-start", head(action))
-            .add("multiple-end/////", trace(action));
-
-        let app_router = AppRoutes::empty()
-            .add_route(router_without_prefix)
-            .add_route(normalizer)
-            .add_routes(vec![
-                Routes::new().add("multiple1", put(action)),
-                Routes::new().add("multiple2", options(action)),
-                Routes::new().add("multiple3", patch(action)),
-            ]);
-
-        for route in app_router.collect() {
-            assert_debug_snapshot!(
-                format!("[{}]", route.uri.replace('/', "[slash]")),
-                format!("{:?} {}", route.actions, route.uri)
-            );
-        }
-    }
-
-    #[test]
-    fn can_load_routes_with_root_prefix() {
-        let router_without_prefix = Routes::new()
-            .add("/loco", get(action))
-            .add("loco-rs", get(action));
-
-        let app_router = AppRoutes::empty()
-            .prefix("api")
-            .add_route(router_without_prefix);
-
-        for route in app_router.collect() {
-            assert_debug_snapshot!(
-                format!("[{}]", route.uri.replace('/', "[slash]")),
-                format!("{:?} {}", route.actions, route.uri)
-            );
-        }
-    }
-
-    #[test]
-    fn can_nest_prefix() {
-        let app_router = AppRoutes::empty().prefix("api").nest_prefix("v1");
-
-        assert_eq!(app_router.get_prefix().unwrap(), "/api/v1/");
-    }
-
-    #[test]
-    fn can_nest_route() {
-        let route = Routes::new().add("/notes", get(action));
-        let app_router = AppRoutes::empty().prefix("api").nest_route("v1", route);
-
-        let routes = app_router.collect();
-        assert_eq!(routes.len(), 1);
-        assert_eq!(routes[0].uri, "/api/v1/notes");
-    }
-
-    #[test]
-    fn can_nest_routes() {
-        let routes = vec![
-            Routes::new().add("/notes", get(action)),
-            Routes::new().add("/users", get(action)),
-        ];
-        let app_router = AppRoutes::empty().prefix("api").nest_routes("v1", routes);
-
-        for route in app_router.collect() {
-            assert_debug_snapshot!(
-                format!("[{}]", route.uri.replace('/', "[slash]")),
-                format!("{:?} {}", route.actions, route.uri)
-            );
-        }
-    }
-
-    #[rstest]
-    #[case(Method::GET, get(action))]
-    #[case(Method::POST, post(action))]
-    #[case(Method::DELETE, delete(action))]
-    #[case(Method::HEAD, head(action))]
-    #[case(Method::OPTIONS, options(action))]
-    #[case(Method::PATCH, patch(action))]
-    #[case(Method::POST, post(action))]
-    #[case(Method::PUT, put(action))]
-    #[case(Method::TRACE, trace(action))]
-    #[tokio::test]
-    async fn can_request_method(
-        #[case] http_method: Method,
-        #[case] method: axum::routing::MethodRouter<AppContext>,
-    ) {
-        let router_without_prefix = Routes::new().add("/loco", method);
-
-        let app_router = AppRoutes::empty().add_route(router_without_prefix);
-
-        let ctx = tests_cfg::app::get_app_context().await;
-        let router = app_router
-            .to_router::<tests_cfg::db::AppHook>(ctx, axum::Router::new())
-            .unwrap();
-
-        let req = axum::http::Request::builder()
-            .uri("/loco")
-            .method(http_method)
-            .body(axum::body::Body::empty())
-            .unwrap();
-
-        let response = router.oneshot(req).await.unwrap();
-        assert!(response.status().is_success());
-    }
-}

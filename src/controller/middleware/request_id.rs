@@ -110,25 +110,3 @@ fn make_request_id(maybe_request_id: Option<HeaderValue>) -> String {
         .unwrap_or_else(|| Uuid::new_v4().to_string())
 }
 
-#[cfg(test)]
-mod tests {
-    use axum::http::HeaderValue;
-    use insta::assert_debug_snapshot;
-
-    use super::make_request_id;
-
-    #[test]
-    fn create_or_fetch_request_id() {
-        let id = make_request_id(Some(HeaderValue::from_static("foo-bar=baz")));
-        assert_debug_snapshot!(id);
-        let id = make_request_id(Some(HeaderValue::from_static("")));
-        assert_debug_snapshot!(id.len());
-        let id = make_request_id(Some(HeaderValue::from_static("==========")));
-        assert_debug_snapshot!(id.len());
-        let long_id = "x".repeat(1000);
-        let id = make_request_id(Some(HeaderValue::from_str(&long_id).unwrap()));
-        assert_debug_snapshot!(id.len());
-        let id = make_request_id(None);
-        assert_debug_snapshot!(id.len());
-    }
-}

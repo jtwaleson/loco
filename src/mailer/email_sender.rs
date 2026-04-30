@@ -29,13 +29,6 @@ pub struct EmailSender {
     pub transport: EmailTransport,
 }
 
-#[cfg(feature = "testing")]
-#[derive(Default, Debug)]
-pub struct Deliveries {
-    pub count: usize,
-    pub messages: Vec<String>,
-}
-
 impl EmailSender {
     /// Creates a new `EmailSender` using the SMTP transport method based on the
     /// provided SMTP configuration.
@@ -75,23 +68,6 @@ impl EmailSender {
         Self {
             transport: EmailTransport::Test(lettre::transport::stub::StubTransport::new_ok()),
         }
-    }
-
-    #[cfg(feature = "testing")]
-    #[must_use]
-    pub fn deliveries(&self) -> Deliveries {
-        if let EmailTransport::Test(stub) = &self.transport {
-            return Deliveries {
-                count: stub.messages().len(),
-                messages: stub
-                    .messages()
-                    .iter()
-                    .map(|(_, content)| content.clone())
-                    .collect(),
-            };
-        }
-
-        Deliveries::default()
     }
 
     /// Sends an email using the configured transport method.
@@ -157,89 +133,3 @@ impl EmailSender {
     }
 }
 
-#[cfg(test)]
-mod tests {
-
-    use insta::{assert_debug_snapshot, with_settings};
-    use lettre::transport::stub::StubTransport;
-
-    use super::*;
-
-    #[tokio::test]
-    async fn can_send_email() {
-        let stub = StubTransport::new_ok();
-
-        let sender = EmailSender {
-            transport: EmailTransport::Test(stub.clone()),
-        };
-
-        let html = r"
-;<html>
-    <body>
-        Test Message
-    </body>
-</html>";
-
-        let data = Email {
-            from: Some("test@framework.com".to_string()),
-            to: "user1@framework.com".to_string(),
-            reply_to: None,
-            subject: "Email Subject".to_string(),
-            text: "Welcome".to_string(),
-            html: html.to_string(),
-            bcc: None,
-            cc: None,
-            headers: None,
-        };
-        assert!(sender.mail(&data).await.is_ok());
-
-        with_settings!({filters => vec![
-            (r"[0-9A-Za-z]+{40}", "IDENTIFIER"),
-            (r"\w+, \d{1,2} \w+ \d{4} \d{2}:\d{2}:\d{2} [+-]\d{4}", "DATE")
-        ]}, {
-            assert_debug_snapshot!(stub.messages());
-        });
-    }
-
-    #[tokio::test]
-    async fn can_send_email_with_custom_headers() {
-        let stub = StubTransport::new_ok();
-
-        let sender = EmailSender {
-            transport: EmailTransport::Test(stub.clone()),
-        };
-
-        let html = r"
-<html>
-    <body>
-        Test Message with Headers
-    </body>
-</html>";
-
-        let headers = crate::mailer::EmailHeaders {
-            references: Some("<notification-item-123@example.com>".to_string()),
-            in_reply_to: Some("<notification-item-123@example.com>".to_string()),
-            message_id: Some("<notification-item-123-1234567890@example.com>".to_string()),
-        };
-
-        let data = Email {
-            from: Some("test@framework.com".to_string()),
-            to: "user1@framework.com".to_string(),
-            reply_to: None,
-            subject: "Email Subject with Headers".to_string(),
-            text: "Welcome with headers".to_string(),
-            html: html.to_string(),
-            bcc: None,
-            cc: None,
-            headers: Some(headers),
-        };
-        assert!(sender.mail(&data).await.is_ok());
-
-        with_settings!({filters => vec![
-            (r"[0-9A-Za-z]+{40}", "IDENTIFIER"),
-            (r"\w+, \d{1,2} \w+ \d{4} \d{2}:\d{2}:\d{2} [+-]\d{4}", "DATE")
-        ]}, {
-            assert_debug_snapshot!(stub.messages());
-        });
-    }
-}

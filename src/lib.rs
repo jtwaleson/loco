@@ -31,8 +31,6 @@ pub mod hash;
 pub mod logger;
 pub mod mailer;
 pub mod task;
-#[cfg(feature = "testing")]
-pub mod tests_cfg;
 pub mod validation;
 pub use validator;
 pub mod cargo_config;

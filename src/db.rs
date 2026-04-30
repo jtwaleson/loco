@@ -695,5 +695,3 @@ pub async fn dump_schema(ctx: &AppContext, fname: &str) -> crate::Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {}

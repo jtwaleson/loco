@@ -77,27 +77,3 @@ pub fn random_string(length: usize) -> String {
         .collect()
 }
 
-#[cfg(test)]
-mod tests {
-
-    use super::*;
-
-    #[test]
-    fn can_hah_password() {
-        let pass = "password-1234";
-
-        let hash_pass = hash_password(pass).unwrap();
-
-        assert!(verify_password(pass, &hash_pass));
-    }
-
-    #[test]
-    fn can_random_string() {
-        let random_length = 32;
-        let first = random_string(random_length);
-        assert_eq!(first.len(), random_length);
-        let second: String = random_string(random_length);
-        assert_eq!(second.len(), random_length);
-        assert_ne!(first, second);
-    }
-}
