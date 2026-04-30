@@ -7,11 +7,12 @@ use super::Result as AppResult;
 use crate::{
     app::{AppContext, Hooks},
     cargo_config::CargoConfig,
-    config, doctor, env_vars,
+    config, env_vars,
     errors::Error,
 };
 use chrono::{DateTime, Utc};
 use regex::Regex;
+use semver::Version;
 use sea_orm::{
     ActiveModelTrait, ConnectOptions, ConnectionTrait, Database, DatabaseBackend,
     DatabaseConnection, DbBackend, DbConn, DbErr, EntityTrait, IntoActiveModel, Statement,
@@ -23,6 +24,7 @@ use std::{
     fs::File,
     io::Write,
     path::Path,
+    process::Command,
     sync::OnceLock,
     time::Duration,
 };
@@ -526,6 +528,56 @@ impl EntityCmd {
     }
 }
 
+const MIN_SEAORMCLI_VER: &str = "1.1.0";
+
+fn ensure_seaorm_cli_for_entity_gen() -> AppResult<()> {
+    match Command::new("sea-orm-cli").arg("--version").output() {
+        Ok(out) => {
+            let input = String::from_utf8_lossy(&out.stdout);
+            let re = Regex::new(r"(\d+\.\d+\.\d+)").expect("valid semver regex");
+            let version_str = re
+                .captures(&input)
+                .and_then(|caps| caps.get(0))
+                .map(|m| m.as_str())
+                .ok_or_else(|| {
+                    Error::Message(
+                        "SeaORM CLI version not found\n   To fix, run:\n      $ cargo install sea-orm-cli"
+                            .to_owned(),
+                    )
+                })?;
+            let version =
+                Version::parse(version_str).map_err(|e| Error::Message(e.to_string()))?;
+            let min_version =
+                Version::parse(MIN_SEAORMCLI_VER).expect("MIN_SEAORMCLI_VER is valid semver");
+            if version >= min_version {
+                Ok(())
+            } else {
+                Err(Error::Message(format!(
+                    "SeaORM CLI minimal version is `{min_version}` (you have `{version}`). \
+                     Run `cargo install sea-orm-cli` to update.\n   To fix, run:\n      $ cargo install sea-orm-cli"
+                )))
+            }
+        }
+        Err(_) => Err(Error::Message(
+            "SeaORM CLI was not found\n   To fix, run:\n      $ cargo install sea-orm-cli"
+                .to_owned(),
+        )),
+    }
+}
+
+async fn ensure_db_for_entity_gen(config: &config::Database) -> AppResult<()> {
+    let conn = connect(config)
+        .await
+        .map_err(|e| Error::Message(format!("DB connection: fails {e}")))?;
+    conn.ping()
+        .await
+        .map_err(|e| Error::Message(format!("DB connection: fails {e}")))?;
+    verify_access(&conn)
+        .await
+        .map_err(|e| Error::Message(format!("DB connection: fails {e}")))?;
+    Ok(())
+}
+
 /// Generate entity model.
 /// This function using sea-orm-cli.
 ///
@@ -533,8 +585,8 @@ impl EntityCmd {
 ///
 /// Returns a [`AppResult`] if an error occurs during generate model entity.
 pub async fn entities(ctx: &AppContext) -> AppResult<String> {
-    doctor::check_seaorm_cli()?.to_result()?;
-    doctor::check_db(&ctx.config.database).await.to_result()?;
+    ensure_seaorm_cli_for_entity_gen()?;
+    ensure_db_for_entity_gen(&ctx.config.database).await?;
 
     let flags = CargoConfig::from_current_dir()?
         .get_db_entities()

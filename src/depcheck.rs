@@ -1,3 +1,6 @@
+//! Cargo.lock dependency version checks (used by unit tests; previously by `doctor`).
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 
 use semver::{Version, VersionReq};

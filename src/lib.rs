@@ -11,7 +11,6 @@ pub mod initializers;
 pub mod prelude;
 
 pub mod data;
-pub mod doctor;
 
 #[cfg(feature = "with-db")]
 pub mod db;
