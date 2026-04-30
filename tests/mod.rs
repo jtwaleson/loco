@@ -1,2 +1,4 @@
-mod controller;
-mod infra_cfg;
+//! Minimal integration-test crate placeholder (network server helpers removed).
+
+#[test]
+fn smoke() {}
